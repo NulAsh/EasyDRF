@@ -19,14 +19,14 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v141_xp</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <SpectreMitigation>false</SpectreMitigation>
     <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v141_xp</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -104,7 +104,7 @@
       <SubSystem>Windows</SubSystem>
       <OutputFile>.\Debug\EasyDRF.exe</OutputFile>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
-      <AdditionalLibraryDirectories>C:\Users\Win7\source\repos\EasyDRF\common\libs</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>common\libs</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>libc.lib;libucrt.lib;ucrt.lib</IgnoreSpecificDefaultLibraries>
       <AdditionalDependencies>libucrtd.lib;gdi32.lib;winmm.lib;user32.lib;libfftw.lib;libspeex.lib;ptt.lib;mixer.lib;comdlg32.lib;Shell32.lib;graphwin.lib;LzmaLib.lib</AdditionalDependencies>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>

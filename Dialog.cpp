@@ -161,6 +161,7 @@ int lasterror2 = 0; //a place for functions to return errors to...
 char rxfilepath[260] = { "Rx Files\\" }; //Added DM
 char rxcorruptpath[260] = { "Corrupt\\" }; //Added DM
 char bsrpath[260] = { "" }; //Added DM
+char waveoutpath[260] = { "WaveOut\\" }; //Added NulAsh
 
 int DMRSindex = 0; //write index for above array
 int DMRSpsize = 0; //previous segment size
@@ -643,6 +644,8 @@ BOOL CALLBACK DialogProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	//Get a list of the input and output sound devices installed on the PC and list them in the menu:
 	numdevIn = DRMReceiver.GetSoundInterface()->GetNumDevIn(); //edited DM
 	numdevOut = DRMReceiver.GetSoundInterface()->GetNumDevOut(); //edited DM
+	DRMReceiver.GetSoundInterface()->SetWaveOutDir(waveoutpath); // added NulAsh
+	DRMTransmitter.GetSoundInterface()->SetWaveOutDir(waveoutpath); // added NulAsh
 	//SetMixerValues(numdevIn); //??? Find out what this does... DM ** REMOVED Sep 2022 because it crashes under Linux for some reason....
 	hMenu = GetSubMenu(GetMenu(hwnd), 1);
 	if (numdevIn >= 30) numdevIn = 30; //edited DM - limit to max 30 devices
@@ -654,7 +657,7 @@ BOOL CALLBACK DialogProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 	AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
 	AppendMenu(hMenu, MF_ENABLED, -1, "TX Output");
-	for (i = 0; i < numdevOut; i++)
+	for (i = 0; i <= numdevOut; i++) // edited NulAsh - to include WaveOut device in menu
 	{
 		string drivnam = DRMReceiver.GetSoundInterface()->GetDeviceNameOut(i);
 		AppendMenu(hMenu, MF_ENABLED, IDM_O_TX_O_DRIVERS0 + i, drivnam.c_str());
@@ -670,7 +673,7 @@ BOOL CALLBACK DialogProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		AppendMenu(hMenu, MF_SEPARATOR, -1, nullptr);
 		AppendMenu(hMenu, MF_ENABLED, -1, "Voice Output");
-		for (i = 0; i < numdevOut; i++)
+		for (i = 0; i <= numdevOut; i++) // edited NulAsh - to include WaveOut device in menu
 		{
 			string drivnam = DRMReceiver.GetSoundInterface()->GetDeviceNameOut(i); //edited DM
 			AppendMenu(hMenu, MF_ENABLED, IDM_O_VO_O_DRIVERS0 + i, drivnam.c_str());
@@ -819,9 +822,9 @@ BOOL CALLBACK DialogProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		for (i=0;i<250;i++)
 			specbufarr[i] = 1.0;
 
-		if (_chdir("Rx Files"))
+		if (_chdir(rxfilepath))
 		{
-			if( _mkdir( "Rx Files" ) != 0 )
+			if( _mkdir(rxfilepath) != 0 )
 				MessageBox( hwnd,"Failed to create Rx Files Directory","ERROR",0);	
 			else
 				MessageBox( hwnd,"Rx Files Directory created","INFO",0);	
@@ -830,10 +833,16 @@ BOOL CALLBACK DialogProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 			_chdir("..");
 //		if (_chdir("Corrupt"))
 		if (_chdir(rxcorruptpath))
-		
 		{
 			if( _mkdir(rxcorruptpath) != 0 )
 				MessageBox( hwnd,"Failed to create Corrupt Directory","ERROR",0);	
+		}
+		else
+			_chdir("..");
+		if (_chdir(waveoutpath))
+		{
+			if (_mkdir(waveoutpath) != 0)
+				MessageBox(hwnd, "Failed to create WaveOut Directory", "ERROR", 0);
 		}
 		else
 			_chdir("..");
@@ -1409,7 +1418,7 @@ void OnCommand ( HWND hwnd, int ctrlid, int code)
 		   setsoundin(ctrl, 'r'); //compute sound device number from click index
 		   unchecksoundrx(hwnd, ctrlid); //clear all other check marks, and add one where clicked
 	   }
-	   if (ctrlid >= IDM_O_TX_O_DRIVERS0 && ctrlid < (IDM_O_TX_O_DRIVERS0 + numdevOut)) {
+	   if (ctrlid >= IDM_O_TX_O_DRIVERS0 && ctrlid <= (IDM_O_TX_O_DRIVERS0 + numdevOut)) { // edited NulAsh - to include WaveOut device in menu
 		   int ctrl = ctrlid - IDM_O_TX_O_DRIVERS0;
 		   setsoundout(ctrl, 't'); //compute sound device number from click index
 		   unchecksoundtx(hwnd, ctrlid); //clear all other check marks, and add one where clicked
@@ -1419,7 +1428,7 @@ void OnCommand ( HWND hwnd, int ctrlid, int code)
 		   setsoundin(ctrl, 't'); //compute sound device number from click index
 		   unchecksoundvoI(hwnd, ctrlid); //clear all other check marks, and add one where clicked
 	   }
-	   if (ctrlid >= IDM_O_VO_O_DRIVERS0 && ctrlid < (IDM_O_VO_O_DRIVERS0 + numdevOut)) {
+	   if (ctrlid >= IDM_O_VO_O_DRIVERS0 && ctrlid <= (IDM_O_VO_O_DRIVERS0 + numdevOut)) { // edited NulAsh - to include WaveOut device in menu
 		   int ctrl = ctrlid - IDM_O_VO_O_DRIVERS0;
 		   setsoundout(ctrl, 'r'); //compute sound device number from click index
 		   unchecksoundvoO(hwnd, ctrlid); //clear all other check marks, and add one where clicked
@@ -2818,6 +2827,12 @@ BOOL CALLBACK DRMSettingsDlgProc
 			SendMessage(GetDlgItem(hwnd, ID_MODE_ROBMODEE), BM_SETCHECK, (WPARAM)0, 0); //added DM
 			break;
 		case ID_SET_B_ROBUST:
+			DRMTransmitter.GetParameters()->eSymbolInterlMode = CParameter::SI_SHORT;
+			SendMessage(GetDlgItem(hwnd, ID_INTERLEAVE_SHORT400MS), BM_SETCHECK, (WPARAM)1, 0);
+			SendMessage(GetDlgItem(hwnd, ID_INTERLEAVE_LONG2S), BM_SETCHECK, (WPARAM)0, 0);
+			DRMTransmitter.GetParameters()->SetMSCProtLev(0);
+			SendMessage(GetDlgItem(hwnd, ID_SETTINGS_MSCPROTECTION_NORMAL), BM_SETCHECK, (WPARAM)1, 0);
+			SendMessage(GetDlgItem(hwnd, ID_SETTINGS_MSCPROTECTION_LOW), BM_SETCHECK, (WPARAM)0, 0);
 			DRMTransmitter.GetParameters()->eMSCCodingScheme = CParameter::CS_1_SM;
 			SendMessage(GetDlgItem(hwnd, ID_MSCCODING_64QAM), BM_SETCHECK, (WPARAM)0, 0);
 			SendMessage(GetDlgItem(hwnd, ID_MSCCODING_16QAM), BM_SETCHECK, (WPARAM)0, 0);
@@ -3027,84 +3042,15 @@ BOOL CALLBACK TXPictureDlgProc
     {
     case WM_INITDIALOG:
 		putfiles(hwnd);
-		if (ECCmode == 2) {
-			//2 instances
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		else if (ECCmode == 3) {
-			//3 instances
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		else if (ECCmode == 4) {
-			//For RS1
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		else if (ECCmode == 5) {
-			//For RS2
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		else if (ECCmode == 6) {
-			//For RS3
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		else if (ECCmode == 7) {
-			//For RS4
-			SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)1, 0);
-		}
-		else {
-			//1 instance
-			SendMessage(GetDlgItem (hwnd, IDC_SENDONCE ), BM_SETCHECK, (WPARAM)1, 0);
-			SendMessage(GetDlgItem (hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem (hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)0, 0);
-			SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)0, 0);
-		}
-		if (longleadin)
-			SendMessage(GetDlgItem(hwnd, IDC_LEADINLONG), BM_SETCHECK, (WPARAM)1, 0);
-		else
-			SendMessage(GetDlgItem(hwnd, IDC_LEADINLONG), BM_SETCHECK, (WPARAM)0, 0);
-		if (autoaddfiles == TRUE) //added DM -----------------------------------------
-			SendMessage(GetDlgItem(hwnd, IDC_ADDALLFILES), BM_SETCHECK, (WPARAM)1, 0);
-		else
-			SendMessage(GetDlgItem(hwnd, IDC_ADDALLFILES), BM_SETCHECK, (WPARAM)0, 0);
+		SendMessage(GetDlgItem(hwnd, IDC_SENDONCE), BM_SETCHECK, (WPARAM)(ECCmode == 1), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_SENDTWICE), BM_SETCHECK, (WPARAM)(ECCmode == 2), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_SENDTHREE), BM_SETCHECK, (WPARAM)(ECCmode == 3), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_RS1), BM_SETCHECK, (WPARAM)(ECCmode == 4), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_RS2), BM_SETCHECK, (WPARAM)(ECCmode == 5), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_RS3), BM_SETCHECK, (WPARAM)(ECCmode == 6), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_RS4), BM_SETCHECK, (WPARAM)(ECCmode == 7), 0);
+		SendMessage(GetDlgItem(hwnd, IDC_LEADINLONG), BM_SETCHECK, (WPARAM)longleadin, 0);
+		SendMessage(GetDlgItem(hwnd, IDC_ADDALLFILES), BM_SETCHECK, (WPARAM)autoaddfiles, 0);
 		return TRUE;
 		break;
     case WM_COMMAND:

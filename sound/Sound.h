@@ -49,6 +49,28 @@
 /* Maximum number of recognized sound cards installed in the system */
 #define MAX_NUMBER_SOUND_CARDS	10
 
+typedef struct WaveHeader {
+	// Riff Wave Header
+	char		chunkId[4];
+	int			chunkSize;
+	char		format[4];
+
+	// Format Subchunk
+	char		subChunk1Id[4];
+	int			subChunk1Size;
+	short int	audioFormat;
+	short int	numChannels;
+	int			sampleRate;
+	int			byteRate;
+	short int	blockAlign;
+	short int	bitsPerSample;
+	//short int extraParamSize;
+
+	// Data Subchunk
+	char		subChunk2Id[4];
+	int			subChunk2Size;
+
+} WaveHeader;
 
 /* Classes ********************************************************************/
 class CSound
@@ -59,6 +81,7 @@ public:
 
 	void		InitRecording(int iNewBufferSize, _BOOLEAN bNewBlocking = TRUE);
 	void		InitPlayback(int iNewBufferSize, _BOOLEAN bNewBlocking = FALSE);
+	void		CloseOutFile();
 	_BOOLEAN	Read(CVector<short>& psData);
 	_BOOLEAN	Write(CVector<short>& psData);
 	_BOOLEAN	IsEmpty(void);
@@ -69,6 +92,9 @@ public:
 	string		GetDeviceNameOut(int iDiD) {return pstrDevicesOut[iDiD];};
 	void		SetInDev(int iNewDev);
 	void		SetOutDev(int iNewDev);
+	UINT		GetOutDev() { return iCurOutDev; }
+	void		SetWaveOutDir(char* dir) { wavdir = dir; }
+	void		ForceReopenOut() { bChangDevOut = TRUE; }
 
 	void		Close();
 
@@ -80,12 +106,13 @@ protected:
 	void		AddInBuffer();
 	void		AddOutBuffer(int iBufNum);
 	void		GetDoneBuffer(int& iCntPrepBuf, int& iIndexDoneBuf);
+	WaveHeader	MakeWaveHeader(int const sampleRate, short int const numChannels, short int const bitsPerSample);
 
 	WAVEFORMATEX	sWaveFormatEx;
 	UINT			iNumDevsIn;
 	UINT			iNumDevsOut;
 	string			pstrDevicesIn[MAX_NUMBER_SOUND_CARDS];
-	string			pstrDevicesOut[MAX_NUMBER_SOUND_CARDS];
+	string			pstrDevicesOut[MAX_NUMBER_SOUND_CARDS + 1];
 	UINT			iCurInDev;
 	UINT			iCurOutDev;
 	BOOLEAN			bChangDevIn;
@@ -109,6 +136,9 @@ protected:
 	WAVEHDR			m_WaveOutHeader[NUM_SOUND_BUFFERS_OUT];
 	HANDLE			m_WaveOutEvent;
 	_BOOLEAN		bBlockingPlay;
+	FILE			*m_WaveOutFile;
+	std::string		m_strWaveOutFileName;
+	char			*wavdir;
 };
 
 

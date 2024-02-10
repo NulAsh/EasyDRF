@@ -50,11 +50,16 @@ void CDRMTransmitter::Start()
 
 void CDRMTransmitter::Send()
 {
+	if (SoundInterface.GetOutDev() == SoundInterface.GetNumDevOut()) // added NulAsh
+	{
+		SoundInterface.ForceReopenOut();
+	}
 	DoNotSend = FALSE;
 }
 void CDRMTransmitter::NotSend()
 {
 	DoNotSend = TRUE;
+	SoundInterface.CloseOutFile(); // added NulAsh
 }
 
 void CDRMTransmitter::Stop()

@@ -27,6 +27,7 @@
 \******************************************************************************/
 
 #include "Sound.h"
+#include <time.h>
 
 
 /* Implementation *************************************************************/
@@ -208,6 +209,56 @@ void CSound::SetInDev(int iNewDev)
 /******************************************************************************\
 * Wave out                                                                     *
 \******************************************************************************/
+
+// Added NulAsh
+WaveHeader CSound::MakeWaveHeader(int const sampleRate,
+	short int const numChannels,
+	short int const bitsPerSample)
+{
+	WaveHeader myHeader;
+
+	// RIFF WAVE Header
+	myHeader.chunkId[0] = 'R';
+	myHeader.chunkId[1] = 'I';
+	myHeader.chunkId[2] = 'F';
+	myHeader.chunkId[3] = 'F';
+	myHeader.format[0] = 'W';
+	myHeader.format[1] = 'A';
+	myHeader.format[2] = 'V';
+	myHeader.format[3] = 'E';
+
+	// Format subchunk
+	myHeader.subChunk1Id[0] = 'f';
+	myHeader.subChunk1Id[1] = 'm';
+	myHeader.subChunk1Id[2] = 't';
+	myHeader.subChunk1Id[3] = ' ';
+	myHeader.audioFormat = 1; // FOR PCM
+	myHeader.numChannels = numChannels; // 1 for MONO, 2 for stereo
+	myHeader.sampleRate = sampleRate; // ie 44100 hertz, cd quality audio
+	myHeader.bitsPerSample = bitsPerSample; //
+	myHeader.byteRate = myHeader.sampleRate * myHeader.numChannels * myHeader.bitsPerSample / 8;
+	myHeader.blockAlign = myHeader.numChannels * myHeader.bitsPerSample / 8;
+
+	// Data subchunk
+	myHeader.subChunk2Id[0] = 'd';
+	myHeader.subChunk2Id[1] = 'a';
+	myHeader.subChunk2Id[2] = 't';
+	myHeader.subChunk2Id[3] = 'a';
+
+	// All sizes for later:
+	// chuckSize = 4 + (8 + subChunk1Size) + (8 + subChubk2Size)
+	// subChunk1Size is constanst, i'm using 16 and staying with PCM
+	// subChunk2Size = nSamples * nChannels * bitsPerSample/8
+	// Whenever a sample is added:
+	//    chunkSize += (nChannels * bitsPerSample/8)
+	//    subChunk2Size += (nChannels * bitsPerSample/8)
+	myHeader.chunkSize = 4 + 8 + 16 + 8 + 0;
+	myHeader.subChunk1Size = 16;
+	myHeader.subChunk2Size = 0;
+
+	return myHeader;
+}
+
 _BOOLEAN CSound::Write(CVector<short>& psData)
 {
 	int			i = 0,j = 0; //inits DM
@@ -252,7 +303,7 @@ _BOOLEAN CSound::Write(CVector<short>& psData)
 			return TRUE; /* An error occurred */
 		}
 	}
-	else if (iCntPrepBuf == NUM_SOUND_BUFFERS_OUT)
+	else if ((iCntPrepBuf == NUM_SOUND_BUFFERS_OUT) && (iCurOutDev != iNumDevsOut)) // Don't send empty buffer if writing to WAV file -- NulAsh
 	{
 		/* ---------------------------------------------------------------------
 		   Buffer is empty -> send as many cleared blocks to the sound-
@@ -312,14 +363,25 @@ _BOOLEAN CSound::IsEmpty(void)
 void CSound::AddOutBuffer(int iBufNum)
 {
 	/* Unprepare old wave-header */
-	waveOutUnprepareHeader(
-		m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	if (m_WaveOut != nullptr)
+	{
+		waveOutUnprepareHeader(
+			m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	}
 
 	/* Prepare buffers for sending to sound interface */
 	PrepareOutBuffer(iBufNum);
 
 	/* Send buffer to driver for filling with new data */
-	waveOutWrite(m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	if (m_WaveOut != nullptr)
+	{
+		waveOutWrite(m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	}
+	else if (iCurOutDev == iNumDevsOut)
+	{
+		fwrite(m_WaveOutHeader[iBufNum].lpData, 1, m_WaveOutHeader[iBufNum].dwBufferLength, m_WaveOutFile);
+		m_WaveOutHeader[iBufNum].dwFlags |= WHDR_DONE;
+	}
 }
 
 void CSound::PrepareOutBuffer(int iBufNum)
@@ -330,7 +392,10 @@ void CSound::PrepareOutBuffer(int iBufNum)
 	m_WaveOutHeader[iBufNum].dwFlags = 0;
 
 	/* Prepare wave-header */
-	waveOutPrepareHeader(m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	if (m_WaveOut != nullptr)
+	{
+		waveOutPrepareHeader(m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
+	}
 }
 
 void CSound::InitPlayback(int iNewBufferSize, _BOOLEAN bNewBlocking)
@@ -351,13 +416,19 @@ void CSound::InitPlayback(int iNewBufferSize, _BOOLEAN bNewBlocking)
 	bBlockingPlay = bNewBlocking;
 
 	/* Reset interface */
-	waveOutReset(m_WaveOut);
+	if (m_WaveOut != nullptr)
+	{
+		waveOutReset(m_WaveOut);
+	}
 
 	for (j = 0; j < NUM_SOUND_BUFFERS_OUT; j++)
 	{
 		/* Unprepare old wave-header (in case header was not prepared before,
 		   simply nothing happens with this function call */
-		waveOutUnprepareHeader(m_WaveOut, &m_WaveOutHeader[j], sizeof(WAVEHDR));
+		if (m_WaveOut != nullptr)
+		{
+			waveOutUnprepareHeader(m_WaveOut, &m_WaveOutHeader[j], sizeof(WAVEHDR));
+		}
 
 		/* Create memory for playback buffer */
 		if (psPlaybackBuffer[j] != nullptr)
@@ -385,19 +456,42 @@ void CSound::OpenOutDevice()
 		waveOutReset(m_WaveOut);
 		waveOutClose(m_WaveOut);
 	}
+	CloseOutFile();
+	if (iCurOutDev == iNumDevsOut)
+	{
+		char tms[15];
+		time_t rawtime;
+		struct tm tm1;
+		WaveHeader wh;
+		time(&rawtime);
+		localtime_s(&tm1, &rawtime);
+		m_strWaveOutFileName = wavdir;
+		if (m_strWaveOutFileName[m_strWaveOutFileName.length() - 1] != '\\') {
+			m_strWaveOutFileName += '\\';
+		}
+		strftime(tms, 15, "%Y%m%d%H%M%S", &tm1);
+		m_strWaveOutFileName += tms;
+		m_strWaveOutFileName += ".wav";
+		wh = MakeWaveHeader(sWaveFormatEx.nSamplesPerSec, sWaveFormatEx.nChannels, sWaveFormatEx.wBitsPerSample);
+		fopen_s(&m_WaveOutFile, m_strWaveOutFileName.c_str(), "wb");
+		fwrite(&wh, sizeof wh, 1, m_WaveOutFile);
+		m_WaveOut = nullptr;
+	}
+	else
+	{
+		MMRESULT result = waveOutOpen(&m_WaveOut, iCurOutDev, &sWaveFormatEx,
+			(DWORD)m_WaveOutEvent, NULL, CALLBACK_EVENT);
 
-	MMRESULT result = waveOutOpen(&m_WaveOut, iCurOutDev, &sWaveFormatEx,
-		(DWORD) m_WaveOutEvent, NULL, CALLBACK_EVENT);
-
-	if (result != MMSYSERR_NOERROR)
-		throw CGenErr("Sound Interface Start, waveOutOpen() failed.");
+		if (result != MMSYSERR_NOERROR)
+			throw CGenErr("Sound Interface Start, waveOutOpen() failed.");
+	}
 }
 
 void CSound::SetOutDev(int iNewDev)
 {
 	/* Set device to wave mapper if iNewDev is greater that the number of
 	   sound devices in the system */
-	if (iNewDev >= (int)iNumDevsOut)
+	if (iNewDev > (int)iNumDevsOut)
 		iNewDev = WAVE_MAPPER;
 
 	/* Change only in case new device id is not already active */
@@ -405,6 +499,30 @@ void CSound::SetOutDev(int iNewDev)
 	{
 		iCurOutDev = iNewDev;
 		bChangDevOut = TRUE;
+	}
+}
+
+// added NulAsh
+void CSound::CloseOutFile()
+{
+	if (m_WaveOutFile != nullptr)
+	{
+		long pos = ftell(m_WaveOutFile) - 8;
+		if (pos == 36)
+		{
+			fclose(m_WaveOutFile);
+			remove(m_strWaveOutFileName.c_str());
+		}
+		else
+		{
+			fseek(m_WaveOutFile, 4, SEEK_SET);
+			fwrite(&pos, 4, 1, m_WaveOutFile);
+			fseek(m_WaveOutFile, 40, SEEK_SET);
+			pos -= 4 + 8 + 16 + 8;
+			fwrite(&pos, 4, 1, m_WaveOutFile);
+			fclose(m_WaveOutFile);
+		}
+		m_WaveOutFile = nullptr;
 	}
 }
 
@@ -476,6 +594,9 @@ void CSound::Close()
 		if (result != MMSYSERR_NOERROR)
 			throw CGenErr("Sound Interface, waveOutClose() failed.");
 	}
+	else
+		CloseOutFile(); // added NulAsh
+
 
 	/* Set flag to open devices the next time it is initialized */
 	bChangDevIn = TRUE;
@@ -491,6 +612,8 @@ CSound::CSound()
 	m_WaveOutEvent = nullptr; //edit DM
 	m_WaveIn = nullptr; //edit DM
 	m_WaveOut = nullptr; //edit DM
+	wavdir = nullptr; //edit NulAsh
+	m_WaveOutFile = nullptr; // edit NulAsh
 
 	/* Init buffer pointer to zero */
 	for (i = 0; i < NUM_SOUND_BUFFERS_IN; i++)
@@ -535,6 +658,7 @@ CSound::CSound()
 	for (i = 0; i < (int)iNumDevsOut; i++)
 		if (!waveOutGetDevCaps(i, &m_WaveOutDevCaps, sizeof(WAVEOUTCAPS)))
 			pstrDevicesOut[i] = m_WaveOutDevCaps.szPname;
+	pstrDevicesOut[i] = "Wave Out"; // Added -- NulAsh
 
 	/* We use an event controlled wave-in (wave-out) structure */
 	/* Create events */

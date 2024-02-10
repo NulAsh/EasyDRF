@@ -1,6 +1,6 @@
 0 TX_Port
 Call Call
-4 TX_Sound_OUT_Device
+3 TX_Sound_OUT_Device
 1 TX_Sound_IN_Device
 0 RX_Sound_OUT_Device
 0 RX_Sound_IN_Device
@@ -13,8 +13,8 @@ Call Call
 1 BW
 1 Interleave
 0 FastReset
-0 Instances/RS
-313 551 764 877 WindowPosition
+7 Instances/RS
+561 219 1002 530 WindowPosition
 1 TxLevel
 1 Allow_Text_Message
 1 DV_Compressor
