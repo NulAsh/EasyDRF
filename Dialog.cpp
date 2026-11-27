@@ -62,6 +62,7 @@ CAudioSourceEncoder* AudioSourceEncoder;
 #define starttx_time 14 //12 edited DM - This allows the decoder more time to lock
 #define starttx_time_long 24 //This allows the decoder even longer to lock
 #define stoptx_time 20 //this is a multiple of the timer interval //10 edited DM - This stops the end of the transmission being cut short
+int stoptx = -1;
 
 #define MAX_PATHLEN 255 //in case the routines can't handle a 255 char path like Windows can, we can reduce this (it's limited to 80 chars elsewhere...) DM
 
@@ -146,7 +147,6 @@ char DMfilename[260]{}; //added DM 130 is now 260 - (Windows max path length is 
 char DMfilename2[260]{}; //added DM 130 is now 260 - (Windows max path length is 255 characters)
 //char DMdecodestat[15]{}; //File decode status
 
-bool DMnewfile = TRUE;
 
 int FrameSize = 0; //for debugging text message mode DM
 int BlockSize = 0; //for debugging text message mode DM
@@ -468,7 +468,7 @@ void TxFunction(  void *dummy  )
 	catch (CGenErr GenErr)
 	{
 		TX_Running = FALSE;
-		MessageBox(mainwindow, "TX Audio Setup Wrong\nWinDRM needs 2 soundcards or WinXP\n Try -r, -t or -p startup options", "TX Exception", 0);
+		MessageBox(mainwindow, GenErr.strError.c_str(), "TX Exception", 0);
 		PTToff(); //added for PTT control DM
 	}
 }
@@ -910,6 +910,7 @@ void OnCommand ( HWND hwnd, int ctrlid, int code)
 		else
 		{
 			if (TX_Running) DRMTransmitter.NotSend();
+			stoptx = -1;
 			IsRX2 = TRUE; //switch to receive mode
 			IsRX = TRUE; //Switch from transmit to receive
 			PTToff(); //added DM
@@ -1019,6 +1020,7 @@ void OnCommand ( HWND hwnd, int ctrlid, int code)
 		else
 		{
 			if (TX_Running) DRMTransmitter.NotSend();
+			stoptx = -1;
 			IsRX2 = TRUE; //Switch from transmit to receive
 			IsRX = TRUE; //Switch from transmit to receive
 			PTToff(); //added for com port control DM
@@ -1464,7 +1466,7 @@ CVector<_REAL>		vecrData;
 CVector<_REAL>		vecrScale;
 BOOL firstnorx = TRUE;
 int isspdisp = 0;
-int stoptx = -1;	
+
 float specagc = 1.0;
 float levelsmooth = 1.0;
 
@@ -1486,7 +1488,8 @@ void CALLBACK TimerProc(HWND hwnd, UINT nMsg, UINT nIDEvent, DWORD dwTime)
 		isspdisp++;
 		if (isspdisp >= 4) isspdisp = 0;
 
-		if (stoptx == 0) OnCommand(mainwindow, IDB_START, 0);
+		if (!IsRX2 && (stoptx == 0 || DRMTransmitter.GetWaveTransfer() == CDRMTransmitter::WaveComplete))
+			OnCommand(mainwindow, IDB_START, 0);
 		if (stoptx >= 0) stoptx--;
 
 		disptype = Display;
@@ -2092,7 +2095,7 @@ void CALLBACK TimerProc(HWND hwnd, UINT nMsg, UINT nIDEvent, DWORD dwTime)
 
 							//If file is bigger than 512k, bypass decompression and save it directly DM
 							//.gz is used for standard mode to be compatible
-								if ((stricmp(&filename[strlen(filename) - 3], ".gz") == 0) && (picsize <= BUFSIZE)) {
+								if ((strlen(filename) >= 3 && stricmp(&filename[strlen(filename) - 3], ".gz") == 0) && (picsize <= BUFSIZE)) {
 									//data is compressed, so decompress it
 									_BYTE* buffer1 = new _BYTE[BUFSIZE]; //File read buffer
 									_BYTE* buffer2 = new _BYTE[BUFSIZE]; //zlib decompression buffer
@@ -2129,10 +2132,10 @@ void CALLBACK TimerProc(HWND hwnd, UINT nMsg, UINT nIDEvent, DWORD dwTime)
 									delete[] buffer1; //remove the buffer arrays from the heap
 									delete[] buffer2;
 								}
-								else if ((stricmp(&filename[strlen(filename) - 3], ".lz") == 0) && (picsize <= BUFSIZE)) {
+								else if ((strlen(filename) >= 3 && stricmp(&filename[strlen(filename) - 3], ".lz") == 0) && (picsize <= BUFSIZE)) {
 #endif //USEGZIP
 #if !USEGZIP
-									if ((stricmp(&filename[strlen(filename) - 3], ".lz") == 0) && (picsize <= BUFSIZE)) {
+									if ((strlen(filename) >= 3 && stricmp(&filename[strlen(filename) - 3], ".lz") == 0) && (picsize <= BUFSIZE)) {
 
 #endif //!USEGZIP
 										//data is compressed, so decompress it
@@ -2354,7 +2357,9 @@ void CALLBACK TimerProc(HWND hwnd, UINT nMsg, UINT nIDEvent, DWORD dwTime)
 						SendMessage(GetDlgItem(hwnd, IDC_EDIT6), WM_SETTEXT, 0, (LPARAM)tempstr); //send to stats window DM
 
 						percent = DRMTransmitter.GetAudSrcEnc()->GetNoOfPic();
-						if ((numbits + 1 > percent) && (stoptx == -1)) stoptx = stoptx_time;
+						if (DRMTransmitter.GetWaveTransfer() == CDRMTransmitter::NoWaveTransfer &&
+							numbits >= percent && stoptx == -1)
+							stoptx = stoptx_time;
 					}
 					numbits = DRMTransmitter.GetParameters()->iNumDecodedBitsMSC;
 					wsprintf(tempstr, "%d", numbits);

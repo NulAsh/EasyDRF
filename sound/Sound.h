@@ -94,7 +94,7 @@ public:
 	void		SetOutDev(int iNewDev);
 	UINT		GetOutDev() { return iCurOutDev; }
 	void		SetWaveOutDir(char* dir) { wavdir = dir; }
-	void		ForceReopenOut() { bChangDevOut = TRUE; }
+	bool		IsWaveFile() const { return iCurOutDev == iNumDevsOut; }
 
 	void		Close();
 

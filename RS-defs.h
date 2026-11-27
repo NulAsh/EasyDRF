@@ -77,7 +77,6 @@ extern char DMfilename[260];
 //extern char DMdecodestat[15];
 
 extern int DMmodehash;
-extern bool DMnewfile;
 
 //extern int DMspeechmodecount;
 

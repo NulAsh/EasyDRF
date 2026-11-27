@@ -28,6 +28,7 @@
 
 #include "Sound.h"
 #include <time.h>
+#include <errno.h>
 
 
 /* Implementation *************************************************************/
@@ -215,7 +216,8 @@ WaveHeader CSound::MakeWaveHeader(int const sampleRate,
 	short int const numChannels,
 	short int const bitsPerSample)
 {
-	WaveHeader myHeader;
+	static_assert(sizeof(WaveHeader) == 44, "Unexpected PCM header layout");
+	WaveHeader myHeader{};
 
 	// RIFF WAVE Header
 	myHeader.chunkId[0] = 'R';
@@ -265,6 +267,18 @@ _BOOLEAN CSound::Write(CVector<short>& psData)
 	int			iCntPrepBuf = 0;
 	int			iIndexDoneBuf = 0;
 
+	if (IsWaveFile())
+	{
+		if (m_WaveOutFile == nullptr || bChangDevOut)
+		{
+			OpenOutDevice();
+			bChangDevOut = FALSE;
+		}
+		if (fwrite(psData.data(), sizeof(short), psData.Size(), m_WaveOutFile) != (size_t)psData.Size())
+			throw CGenErr("Writing WAV samples failed.");
+		return FALSE;
+	}
+
 	/* Check if device must be opened or reinitialized */
 	if (bChangDevOut == TRUE)
 	{
@@ -303,7 +317,7 @@ _BOOLEAN CSound::Write(CVector<short>& psData)
 			return TRUE; /* An error occurred */
 		}
 	}
-	else if ((iCntPrepBuf == NUM_SOUND_BUFFERS_OUT) && (iCurOutDev != iNumDevsOut)) // Don't send empty buffer if writing to WAV file -- NulAsh
+	else if (iCntPrepBuf == NUM_SOUND_BUFFERS_OUT)
 	{
 		/* ---------------------------------------------------------------------
 		   Buffer is empty -> send as many cleared blocks to the sound-
@@ -377,11 +391,6 @@ void CSound::AddOutBuffer(int iBufNum)
 	{
 		waveOutWrite(m_WaveOut, &m_WaveOutHeader[iBufNum], sizeof(WAVEHDR));
 	}
-	else if (iCurOutDev == iNumDevsOut)
-	{
-		fwrite(m_WaveOutHeader[iBufNum].lpData, 1, m_WaveOutHeader[iBufNum].dwBufferLength, m_WaveOutFile);
-		m_WaveOutHeader[iBufNum].dwFlags |= WHDR_DONE;
-	}
 }
 
 void CSound::PrepareOutBuffer(int iBufNum)
@@ -401,6 +410,14 @@ void CSound::PrepareOutBuffer(int iBufNum)
 void CSound::InitPlayback(int iNewBufferSize, _BOOLEAN bNewBlocking)
 {
 	int	i = 0, j = 0; //inits DM
+
+	// File exports open on the first completed frame, never during configuration.
+	if (IsWaveFile())
+	{
+		iBufferSizeOut = iNewBufferSize;
+		bBlockingPlay = bNewBlocking;
+		return;
+	}
 
 	/* Check if device must be opened or reinitialized */
 	if (bChangDevOut == TRUE)
@@ -455,27 +472,35 @@ void CSound::OpenOutDevice()
 	{
 		waveOutReset(m_WaveOut);
 		waveOutClose(m_WaveOut);
+		m_WaveOut = nullptr;
 	}
 	CloseOutFile();
 	if (iCurOutDev == iNumDevsOut)
 	{
 		char tms[15];
-		time_t rawtime;
-		struct tm tm1;
-		WaveHeader wh;
-		time(&rawtime);
-		localtime_s(&tm1, &rawtime);
-		m_strWaveOutFileName = wavdir;
-		if (m_strWaveOutFileName[m_strWaveOutFileName.length() - 1] != '\\') {
-			m_strWaveOutFileName += '\\';
+		time_t now = time(nullptr);
+		struct tm local;
+		localtime_s(&local, &now);
+		strftime(tms, sizeof(tms), "%Y%m%d%H%M%S", &local);
+		string stem = wavdir ? wavdir : "";
+		if (!stem.empty() && stem.back() != '\\' && stem.back() != '/')
+			stem += '\\';
+		stem += tms;
+		// Two short exports (or two instances) can start in the same second.
+		for (unsigned suffix = 0; ; ++suffix)
+		{
+			m_strWaveOutFileName = stem;
+			if (suffix != 0)
+				m_strWaveOutFileName += "-" + std::to_string(suffix);
+			m_strWaveOutFileName += ".wav";
+			const errno_t error = fopen_s(&m_WaveOutFile, m_strWaveOutFileName.c_str(), "wbx");
+			if (error == 0) break;
+			if (error != EEXIST)
+				throw CGenErr("Cannot create WAV file: " + m_strWaveOutFileName);
 		}
-		strftime(tms, 15, "%Y%m%d%H%M%S", &tm1);
-		m_strWaveOutFileName += tms;
-		m_strWaveOutFileName += ".wav";
-		wh = MakeWaveHeader(sWaveFormatEx.nSamplesPerSec, sWaveFormatEx.nChannels, sWaveFormatEx.wBitsPerSample);
-		fopen_s(&m_WaveOutFile, m_strWaveOutFileName.c_str(), "wb");
-		fwrite(&wh, sizeof wh, 1, m_WaveOutFile);
-		m_WaveOut = nullptr;
+		const WaveHeader wh = MakeWaveHeader(sWaveFormatEx.nSamplesPerSec, sWaveFormatEx.nChannels, sWaveFormatEx.wBitsPerSample);
+		if (fwrite(&wh, sizeof wh, 1, m_WaveOutFile) != 1)
+			throw CGenErr("Writing WAV header failed.");
 	}
 	else
 	{
@@ -505,25 +530,20 @@ void CSound::SetOutDev(int iNewDev)
 // added NulAsh
 void CSound::CloseOutFile()
 {
-	if (m_WaveOutFile != nullptr)
+	if (m_WaveOutFile == nullptr) return;
+	FILE* file = m_WaveOutFile;
+	m_WaveOutFile = nullptr;
+	const auto length = _ftelli64(file);
+	bool ok = length >= static_cast<long long>(sizeof(WaveHeader)) && length - 8 <= UINT32_MAX;
+	if (ok)
 	{
-		long pos = ftell(m_WaveOutFile) - 8;
-		if (pos == 36)
-		{
-			fclose(m_WaveOutFile);
-			remove(m_strWaveOutFileName.c_str());
-		}
-		else
-		{
-			fseek(m_WaveOutFile, 4, SEEK_SET);
-			fwrite(&pos, 4, 1, m_WaveOutFile);
-			fseek(m_WaveOutFile, 40, SEEK_SET);
-			pos -= 4 + 8 + 16 + 8;
-			fwrite(&pos, 4, 1, m_WaveOutFile);
-			fclose(m_WaveOutFile);
-		}
-		m_WaveOutFile = nullptr;
+		const uint32_t riffSize = static_cast<uint32_t>(length - 8);
+		const uint32_t dataSize = static_cast<uint32_t>(length - sizeof(WaveHeader));
+		ok = fseek(file, 4, SEEK_SET) == 0 && fwrite(&riffSize, sizeof riffSize, 1, file) == 1 &&
+			fseek(file, 40, SEEK_SET) == 0 && fwrite(&dataSize, sizeof dataSize, 1, file) == 1;
 	}
+	if (fclose(file) != 0 || !ok)
+		throw CGenErr("Finalizing WAV file failed: " + m_strWaveOutFileName);
 }
 
 
@@ -574,6 +594,7 @@ void CSound::Close()
 
 		/* Close the sound in device */
 		result = waveInClose(m_WaveIn);
+		m_WaveIn = nullptr;
 		if (result != MMSYSERR_NOERROR)
 			throw CGenErr("Sound Interface, waveInClose() failed.");
 	}
@@ -591,6 +612,7 @@ void CSound::Close()
 
 		/* Close the sound out device */
 		result = waveOutClose(m_WaveOut);
+		m_WaveOut = nullptr;
 		if (result != MMSYSERR_NOERROR)
 			throw CGenErr("Sound Interface, waveOutClose() failed.");
 	}

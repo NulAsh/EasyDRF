@@ -88,7 +88,7 @@ int rs1encode(unsigned char* inbuf, unsigned char* outbuf, unsigned int filesize
         int j = 0;
         //read in data_length x 8-bit symbols of data to be encoded
         while (j < data_length) {
-            message[j] = inbuf[i]; //read from inbuf, and write to message buffer, data_length symbols
+            message[j] = (i < filesize) ? inbuf[i] : 0;
             j++;
             i++;
         }
@@ -153,7 +153,7 @@ int rs2encode(unsigned char* inbuf, unsigned char* outbuf, unsigned int filesize
        int j = 0;
         //read in data_length x 8-bit symbols of data to be encoded
         while (j < data_length) {
-            message[j] = inbuf[i]; //read from inbuf, and write to message buffer, data_length symbols
+            message[j] = (i < filesize) ? inbuf[i] : 0;
             j++;
             i++;
         }
@@ -218,7 +218,7 @@ int rs3encode(unsigned char* inbuf, unsigned char* outbuf, unsigned int filesize
        int j = 0;
         //read in data_length x 8-bit symbols of data to be encoded
         while (j < data_length) {
-            message[j] = inbuf[i]; //read from inbuf, and write to message buffer, data_length symbols
+            message[j] = (i < filesize) ? inbuf[i] : 0;
             j++;
             i++;
         }
@@ -283,7 +283,7 @@ int rs4encode(unsigned char* inbuf, unsigned char* outbuf, unsigned int filesize
        int j = 0;
         //read in data_length x 8-bit symbols of data to be encoded
         while (j < data_length) {
-            message[j] = inbuf[i]; //read from inbuf, and write to message buffer, data_length symbols
+            message[j] = (i < filesize) ? inbuf[i] : 0;
             j++;
             i++;
         }

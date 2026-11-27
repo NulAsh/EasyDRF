@@ -66,7 +66,9 @@ public:
 		{DataEncoder.GetSliShowEnc()->ClearAllFileNames();}
 
 	void SetTheStartDelay(int thestartdelay)
-		{ DataEncoder.GetSliShowEnc()->SetMyStartDelay(thestartdelay);} //edited DM
+		{ leadInFrames = thestartdelay; }
+	void SetWaveFileMode(bool enabled) { waveFile = enabled; }
+	int GetLastPayloadFrame() const { return lastPayloadFrame; }
 	int GetPicCnt()
 		{return DataEncoder.GetSliShowEnc()->GetPicCnt(); }
 	int GetPicPerc()
@@ -99,6 +101,10 @@ protected:
 	CTextMessageEncoder TextMessage{};
 	_BOOLEAN			bUsingTextMessage{};
 	CDataEncoder		DataEncoder{};
+	bool waveFile = false;
+	int leadInFrames = 12;
+	int framesEncoded = 0;
+	int lastPayloadFrame = 0;
 	int					iTotPacketSize{};
 	_BOOLEAN			bIsDataService{};
 

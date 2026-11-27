@@ -109,6 +109,7 @@ template<class TData> void CBuffer<TData>::Init(const int iNewBufferSize)
 {
 	/* Assign buffer size */
 	iBufferSize = iNewBufferSize;
+	bRequestFlag = FALSE;
 
 	/* Allocate memory for data field */
 	vecBuffer.Init(iBufferSize);

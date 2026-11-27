@@ -47,41 +47,22 @@
 \******************************************************************************/
 void CMOTSlideShowEncoder::GetDataUnit(CVector<_BINARY>& vecbiNewData)
 {
-	/* Get new data group from MOT encoder. If the last MOT object was
-	   completely transmitted, this functions returns true. In this case, put
-	   a new picture to the MOT encoder object */
-	if (MOTDAB.GetDataGroup(vecbiNewData) == TRUE)
-		AddNextPicture();
-}
-
-void CMOTSlideShowEncoder::Init(int iSegSize)
-{
-	/* Reset picutre counter for browsing in the vector of file names. Start
-	   with first picture */
-	iPictureCnt = 0;
-
-	MOTDAB.Reset(iSegSize);
-
-	iSegmentSize = iSegSize;
-
-	AddNextPicture();
-}
-
-void CMOTSlideShowEncoder::AddNextPicture()
-{
-	CVector<short> dummy;
-
-	/* Make sure at least one picture is in container */
-	if (vecMOTPicture.Size() > 0)
+	if (startObject)
 	{
-		/* Get current file name */
-		MOTDAB.SetMOTObject(vecMOTPicture[iPictureCnt],vecMOTSegments[iPictureCnt]);
-
-		/* Set file counter to next picture, test for wrap around */
-		iPictureCnt++;
-		if (iPictureCnt == vecMOTPicture.Size())
-			iPictureCnt = 1;
+		CMOTObject& object = vecMOTPicture[iPictureCnt];
+		MOTDAB.SetMOTObject(object, vecMOTSegments[iPictureCnt],
+			MOTDAB.GetPicCount() == 0, waveFile);
+		iPictureCnt = (iPictureCnt + 1) % vecMOTPicture.Size();
 	}
+	startObject = MOTDAB.GetDataGroup(vecbiNewData);
+}
+
+void CMOTSlideShowEncoder::Init(int iSegSize, bool isWaveFile)
+{
+	iPictureCnt = 0;
+	startObject = true;
+	waveFile = isWaveFile;
+	MOTDAB.Reset(iSegSize);
 }
 
 void CMOTSlideShowEncoder::AddFileName(const string& strFileName, const string& strFileNamenoDir, CVector<short>  vecsToSend)
@@ -102,7 +83,6 @@ void CMOTSlideShowEncoder::AddFileName(const string& strFileName, const string& 
 		_BYTE* buffer1T = new _BYTE[BUFSIZE*2]; //File read buffer - now 1M to fit RS encoding
 		_BYTE* buffer2T = new _BYTE[BUFSIZE*2]; //zlib & interleaver buffer - now 1M to fit RS encoding
 		uLongf filesize;
-		unsigned int dd = 0;
 		int result = 0;
 		filesize = 0;
 
@@ -253,99 +233,18 @@ void CMOTSlideShowEncoder::AddFileName(const string& strFileName, const string& 
 
 		//Add code to truncate filename if it's longer than 79 characters - this is already done later - but it needs to be more elegant, so it doesn't cut the extensions off... TODO DM
 
-		if (vecMOTPicture.Size() == 0)
-		{
-			int i = 0, k = 0; //init DM
-			int actsize = 0;
-			for (i=0;i<the_startdelay;i++)
-			{
-				/* Enlarge vector storing the picture objects */
-				iOldNumObj = vecMOTPicture.Size();
-				vecMOTPicture.Enlarge(1);
-				vecMOTSegments.Enlarge(1);
-	
-				/* Store file name and format string */
-//				vecMOTPicture[iOldNumObj].strName = strFileNamenoDir; //edited DM
-				vecMOTPicture[iOldNumObj].strName = strFileNamenoDirX; //use updated filename instead, in case it needs a .gz extension
-				vecMOTPicture[iOldNumObj].strNameandDir = strFileName;
-	
-				/* Fill body data with content of selected file */
-				vecMOTPicture[iOldNumObj].vecbRawData.Init(0);
-				vecMOTSegments[iOldNumObj].Init(the_startdelay);
-				vecMOTPicture[iOldNumObj].bIsLeader = (i == 0); //mark as leader if i == 0 DM
-				for (k=0;k<the_startdelay;k++)
-					vecMOTSegments[iOldNumObj][k] = k;
-	
-				dd = 0;
-				//During Lead-In only
-				//If no RS coding is used, read from buffer2T
-				//If RS coding is used, read from buffer1T but write the new header first
-				if (ECCmode > 3) {
-					while (dd < filesize)  //Read from buffer up to data size This is a read for the leadin - not all of it is used
-					{
-						/* Add one byte = SIZEOF__BYTE bits */
-						vecMOTPicture[iOldNumObj].vecbRawData.Enlarge(SIZEOF__BYTE);
-						vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer2T[dd], SIZEOF__BYTE); //from new buffer2T
-//						vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer1T[dd], SIZEOF__BYTE); //from new buffer1T
-						dd++; //next
-					}
-				}
-				else {
-					while (dd < filesize)  //Read from buffer up to data size - This is a read for the leadin - not all of it is used
-					{
-					/* Add one byte = SIZEOF__BYTE bits */
-						vecMOTPicture[iOldNumObj].vecbRawData.Enlarge(SIZEOF__BYTE);
-						vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer2T[dd], SIZEOF__BYTE); //from new buffer2T
-						dd++; //next
-					}
-				}
-
-				actsize += iSegmentSize;
-				actsize += vecMOTPicture[iOldNumObj].vecbRawData.Size() / SIZEOF__BYTE;
-				if (actsize >= iSegmentSize*the_startdelay) i = the_startdelay;
-			}
-		}
-
-		/* Enlarge vector storing the picture objects */
 		iOldNumObj = vecMOTPicture.Size();
 		vecMOTPicture.Enlarge(1);
 		vecMOTSegments.Enlarge(1);
-
-		/* Store file name and format string */
-//		vecMOTPicture[iOldNumObj].strName = strFileNamenoDir;
-		vecMOTPicture[iOldNumObj].strName = strFileNamenoDirX; //use updated filename DM
-		vecMOTPicture[iOldNumObj].strNameandDir = strFileName;
-
-		/* Fill body data with content of selected file */
-		const int vecsegsize = vecsToSend.Size();
-		vecMOTPicture[iOldNumObj].vecbRawData.Init(0);
-		vecMOTSegments[iOldNumObj].Init(vecsegsize);
-		for (int k=0;k<vecsegsize;k++)
-			vecMOTSegments[iOldNumObj][k] = vecsToSend[k];
-		vecMOTPicture[iOldNumObj].bIsLeader = FALSE;
-
-		dd = 0;
-		if (ECCmode > 3) {
-			//FOR RS CODING
-			while (dd < filesize)  //Read from buffer up to data size
-			{
-				/* Add one byte = SIZEOF__BYTE bits */
-				vecMOTPicture[iOldNumObj].vecbRawData.Enlarge(SIZEOF__BYTE);
-				vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer2T[dd], SIZEOF__BYTE); //from new buffer2T
-//				vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer1T[dd], SIZEOF__BYTE); //from new buffer1T
-				dd++; //next
-			}
-		}
-		else {
-			//NO RS CODING
-			while (dd < filesize)  //Read from buffer up to data size
-			{
-				/* Add one byte = SIZEOF__BYTE bits */
-				vecMOTPicture[iOldNumObj].vecbRawData.Enlarge(SIZEOF__BYTE);
-				vecMOTPicture[iOldNumObj].vecbRawData.Enqueue((uint32_t)buffer2T[dd], SIZEOF__BYTE); //from new buffer2T
-				dd++; //next
-			}
-		}
+		CMOTObject& object = vecMOTPicture[iOldNumObj];
+		object.strName = strFileNamenoDirX;
+		object.strNameandDir = strFileName;
+		vecMOTSegments[iOldNumObj].Init(vecsToSend.Size());
+		vecMOTSegments[iOldNumObj] = vecsToSend;
+		object.vecbRawData.Init(filesize * SIZEOF__BYTE);
+		object.vecbRawData.ResetBitAccess();
+		for (uLongf index = 0; index < filesize; ++index)
+			object.vecbRawData.Enqueue(buffer2T[index], SIZEOF__BYTE);
 
 		//remove the buffer arrays from the heap DM
 		delete[] buffer1T;
@@ -353,10 +252,6 @@ void CMOTSlideShowEncoder::AddFileName(const string& strFileName, const string& 
 	}
 }
 
-void CMOTSlideShowEncoder::SetMyStartDelay(int delay)
-{
-	the_startdelay = delay;
-}
 int CMOTSlideShowEncoder::GetPicPerc(void)
 {
 	int segct = 0, totseg = 0; //init DM
@@ -393,7 +288,7 @@ _BOOLEAN CMOTSlideShowDecoder::GetPicture(CMOTObject& NewPic)
 	NewPic.Reset();
 
 	/* Only copy picture content if picture is available */
-	if (iRawDataSize != 0)
+	if (bNewPicture || iRawDataSize != 0)
 	{
 		NewPic = MOTPicture;
 	}
