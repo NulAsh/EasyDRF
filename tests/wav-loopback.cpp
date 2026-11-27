@@ -57,18 +57,20 @@ static void captureBlock()
 
 static int encode(int argc, char** argv)
 {
-	// tx robustness qam long-interleave lead-in-frames ECC file [file ...]
-	if (argc < 8) return 2;
+	// tx robustness qam long-interleave lead-in-frames ECC narrow low-protection file [file ...]
+	if (argc < 10) return 2;
 	CParameter& p = *DRMTransmitter.GetParameters();
 	ERobMode mode = static_cast<ERobMode>(atoi(argv[2]));
 	p.bOnlyPicture = true;
-	p.InitCellMapTable(mode, SO_1);
+	const ESpecOcc bandwidth = atoi(argv[7]) ? SO_0 : SO_1;
+	p.InitCellMapTable(mode, bandwidth);
+	p.MSCPrLe.iPartB = atoi(argv[8]);
 	p.eMSCCodingScheme = static_cast<CParameter::ECodScheme>(atoi(argv[3]));
 	p.eSymbolInterlMode = atoi(argv[4]) ? CParameter::SI_LONG : CParameter::SI_SHORT;
 	p.Service[0].strLabel = "Call";
 	ECCmode = atoi(argv[6]);
 	TxLevel = 1;
-	setmodeqam(mode, p.eMSCCodingScheme, p.eSymbolInterlMode, SO_1);
+	setmodeqam(mode, p.eMSCCodingScheme, p.eSymbolInterlMode, bandwidth);
 	auto* sound = DRMTransmitter.GetSoundInterface();
 	char output[] = ".";
 	sound->SetWaveOutDir(output);
@@ -82,7 +84,7 @@ static int encode(int argc, char** argv)
 	for (int pass = 0; pass < 2; ++pass)
 	{
 		source->ClearPicFileNames();
-		for (int i = 7; i < argc; ++i)
+		for (int i = 9; i < argc; ++i)
 			source->SetPicFileName(argv[i], argv[i], CVector<short>());
 		DRMTransmitter.Init();
 		DRMTransmitter.Send();

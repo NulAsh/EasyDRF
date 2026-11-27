@@ -29,11 +29,11 @@ def build_test(work):
     return exe
 
 
-def check(exe, folder, mode, qam, depth, lead, ecc, files):
+def check(exe, folder, mode, qam, depth, lead, ecc, files, narrow=0, low_protection=0):
     folder.mkdir()
     for name, body in files.items():
         (folder / name).write_bytes(body)
-    subprocess.run([str(exe), "tx", *map(str, (mode, qam, depth, lead, ecc)), *files],
+    subprocess.run([str(exe), "tx", *map(str, (mode, qam, depth, lead, ecc, narrow, low_protection)), *files],
                    cwd=folder, check=True)
     a, b = sorted(folder.glob("*.wav"))
     raw = a.read_bytes()
@@ -62,7 +62,7 @@ def check(exe, folder, mode, qam, depth, lead, ecc, files):
             assert not any(data[start + size:])
             received = data[start:start + size]
         assert received == body
-    print(f"mode={mode} qam={qam} long={depth} ecc={ecc} frames={(len(raw)-44)//76800}", flush=True)
+    print(f"mode={mode} qam={qam} long={depth} narrow={narrow} low={low_protection} ecc={ecc} frames={(len(raw)-44)//76800}", flush=True)
 
 
 if __name__ == "__main__":
@@ -73,5 +73,8 @@ if __name__ == "__main__":
         for mode, qam, depth in product(range(3), range(3), range(2)):
             check(exe, work / f"{mode}-{qam}-{depth}", mode, qam, depth, 14, 1,
                   {"GAME.BIN": game, "A": b"\x91", "EMPTY.BIN": b""})
+            for narrow, low in ((1, 0), (0, 1), (1, 1)):
+                check(exe, work / f"{mode}-{qam}-{depth}-{narrow}-{low}",
+                      mode, qam, depth, 14, 1, {"A": b"\x91"}, narrow, low)
         for ecc in range(4, 8):
             check(exe, work / f"rs{ecc}", 1, 1, 1, 24, ecc, {"GAME.BIN": game})

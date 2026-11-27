@@ -162,7 +162,6 @@ protected:
 	CRealVector					rGuardPowBlock;
 
 	CRealVector					vecrRMCorrBuffer[NUM_ROBUSTNESS_MODES];
-	CComplexVector				veccSymbolRate[NUM_ROBUSTNESS_MODES];
 	int modeHistorySamples;
 	int previousModeCandidate;
 	int							iRMCorrBufSize;

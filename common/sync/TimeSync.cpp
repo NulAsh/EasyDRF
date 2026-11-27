@@ -357,12 +357,23 @@ void CTimeSync::ProcessDataInternal(CParameter& ReceiverParam)
 				rMaxValRMCorr = (CReal) 0.0;
 				for (j = 0; j < NUM_ROBUSTNESS_MODES; j++)
 				{
-					/* Correlation with symbol rate frequency (Correlations must
-					   be normalized to be comparable! ("/ iGuardSizeX")) */
-					CComplex correlation(0, 0);
-					for (k = 0; k < iRMCorrBufSize; ++k)
-						correlation += vecrRMCorrBuffer[j][k] * veccSymbolRate[j][k];
-					rResMode[j] = Abs(correlation) / iLenGuardInt[j];
+					// A cyclic prefix repeats the end of its OFDM symbol. Fold
+					// the mismatch over whole symbols at each possible phase.
+					// With the correct FFT length, one phase consistently has
+					// much less mismatch than the average across the symbol.
+					const int period = (iLenUsefPart[j] + iLenGuardInt[j]) / iStepSizeGuardCorr;
+					const int samples = (iRMCorrBufSize / period) * period;
+					CReal total = 0, best = 0;
+					for (int phase = 0; phase < period; ++phase)
+					{
+						CReal mismatch = 0;
+						for (int index = phase; index < samples; index += period)
+							mismatch -= vecrRMCorrBuffer[j][index];
+						total += mismatch;
+						if (phase == 0 || mismatch < best) best = mismatch;
+					}
+					const CReal mean = total / period;
+					rResMode[j] = mean > 0 ? (mean - best) / mean : 0;
 
 					/* Search for maximum */
 					if (rResMode[j] > rMaxValRMCorr)
@@ -588,7 +599,7 @@ fflush(pFile);
 
 void CTimeSync::InitInternal(CParameter& ReceiverParam)
 {
-	int		i = 0, j = 0; //init DM
+	int i = 0;
 	int		iMaxSymbolBlockSize = 0; //init DM
 	int		iCorrBuffSize = 0; //init DM
 
@@ -714,11 +725,6 @@ void CTimeSync::InitInternal(CParameter& ReceiverParam)
 		/* Allocate memory for correlation input buffers */
 		vecrRMCorrBuffer[i].Init(iRMCorrBufSize);
 
-		// One complex Fourier coefficient at this mode's exact symbol rate.
-		veccSymbolRate[i].Init(iRMCorrBufSize);
-		const CReal step = 2 * crPi * STEP_SIZE_GUARD_CORR / (iLenUsefPart[i] + iLenGuardInt[i]);
-		for (j = 0; j < iRMCorrBufSize; ++j)
-			veccSymbolRate[i][j] = CComplex(cos(j * step), sin(j * step));
 	}
 
 #ifdef USE_FRQOFFS_TRACK_GUARDCORR
