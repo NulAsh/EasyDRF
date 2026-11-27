@@ -42,10 +42,10 @@
 class CMOTSlideShowEncoder
 {
 public:
-	CMOTSlideShowEncoder() : vecMOTPicture(0), vecMOTSegments(0) { SetMyStartDelay(12); Init(116); } //
+	CMOTSlideShowEncoder() : vecMOTPicture(0), vecMOTSegments(0) { Init(116, false); } //
 	virtual ~CMOTSlideShowEncoder() {}
 
-	void Init(int iSegSize);
+	void Init(int iSegSize, bool isWaveFile);
 
 	void GetDataUnit(CVector<_BINARY>& vecbiNewData);
 
@@ -54,8 +54,6 @@ public:
 					 CVector<short>  vecsToSend);
 	void ClearAllFileNames() {vecMOTPicture.Init(0); vecMOTSegments.Init(0); }
 
-	void SetMyStartDelay(int delay);
-
 	int GetNoOfPic(void) { return vecMOTPicture.Size(); };
 	int GetPicCnt(void) { return MOTDAB.GetPicCount(); };
 	int GetPicPerc(void);
@@ -63,15 +61,13 @@ public:
 	int GetPicSegmTot(void) { return MOTDAB.GetPicSegmTot(); };
 
 protected:
-	void AddNextPicture();
-
 	CMOTDABEnc			MOTDAB;
 
 	CVector<CMOTObject>	vecMOTPicture;
 	CVector<CVector<short> >  vecMOTSegments;
 	int					iPictureCnt;
-	int					the_startdelay;
-	int					iSegmentSize;
+	bool startObject;
+	bool waveFile;
 };
 
 

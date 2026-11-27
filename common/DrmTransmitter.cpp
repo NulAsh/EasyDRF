@@ -32,39 +32,33 @@
 
 /* Implementation *************************************************************/
 
-BOOL DoNotSend = TRUE;
-
 void CDRMTransmitter::Start()
 {
-	/* Set run flag */
-	TransmParam.bRunThread = TRUE;
-
-	DoNotSend = TRUE;
-
-	/* Initialization of the modules */
-	Init();
-
-	/* Start the transmitter run routine */
 	Run();
 }
 
 void CDRMTransmitter::Send()
 {
-	if (SoundInterface.GetOutDev() == SoundInterface.GetNumDevOut()) // added NulAsh
-	{
-		SoundInterface.ForceReopenOut();
-	}
-	DoNotSend = FALSE;
+	std::lock_guard<std::mutex> lock(txMutex);
+	waveTransfer = SoundInterface.IsWaveFile() && TransmParam.iNumDataService == 1 ?
+		WritingWave : NoWaveTransfer;
+	sending = true;
+	wakeTransmitter.notify_one();
 }
+
 void CDRMTransmitter::NotSend()
 {
-	DoNotSend = TRUE;
-	SoundInterface.CloseOutFile(); // added NulAsh
+	std::lock_guard<std::mutex> lock(txMutex);
+	sending = false;
+	SoundInterface.CloseOutFile();
+	waveTransfer = NoWaveTransfer;
 }
 
 void CDRMTransmitter::Stop()
 {
-	TransmParam.bRunThread = FALSE;
+	std::lock_guard<std::mutex> lock(txMutex);
+	stopping = true;
+	wakeTransmitter.notify_one();
 }
 
 void CDRMTransmitter::Run()
@@ -74,48 +68,65 @@ void CDRMTransmitter::Run()
  convention is always "input-buffer, output-buffer". Additional, the
  DRM-parameters are fed to the function
 */
-	while (TransmParam.bRunThread)
+	for (;;)
 	{
-		if (DoNotSend)
+		std::unique_lock<std::mutex> lock(txMutex);
+		wakeTransmitter.wait(lock, [this] { return sending || stopping; });
+		if (stopping)
 		{
-			Sleep(200);
+			SoundInterface.Close();
+			sending = stopping = false;
+			waveTransfer = NoWaveTransfer;
+			return;
 		}
-		else
-		{
-			/* MSC ****************************************************************/
-			/* Read the source signal (Audio Input from Mike) */
-			ReadData.ReadData(TransmParam, DataBuf);
 
-			/* Audio source encoder */
-			AudioSourceEncoder.ProcessData(TransmParam, DataBuf, AudSrcBuf); //Added DM - This naming convention is confusing here. DataBuf is the audio input, and AudSrcBuf is the data output!
+		/* MSC ****************************************************************/
+		/* Read the source signal (Audio Input from Mike) */
+		ReadData.ReadData(TransmParam, DataBuf);
+
+		/* Audio source encoder */
+		AudioSourceEncoder.ProcessData(TransmParam, DataBuf, AudSrcBuf); //Added DM - This naming convention is confusing here. DataBuf is the audio input, and AudSrcBuf is the data output!
 //			AudioSourceEncoder.ProcessData(TransmParam, AudSrcBuf); //no audio input for DLL version DM
 
-			/* MLC-encoder */
-			MSCMLCEncoder.ProcessData(TransmParam, AudSrcBuf, MLCEncBuf);
-	
-			/* Convolutional interleaver */
-			SymbInterleaver.ProcessData(TransmParam, MLCEncBuf, IntlBuf);
+		/* MLC-encoder */
+		MSCMLCEncoder.ProcessData(TransmParam, AudSrcBuf, MLCEncBuf);
 
-			/* FAC ****************************************************************/
-			GenerateFACData.ReadData(TransmParam, GenFACDataBuf);
-			FACMLCEncoder.ProcessData(TransmParam, GenFACDataBuf, FACMapBuf);
+		/* Convolutional interleaver */
+		SymbInterleaver.ProcessData(TransmParam, MLCEncBuf, IntlBuf);
 
-			/* Mapping of the MSC, FAC and pilots on the carriers ************/
-			OFDMCellMapping.ProcessData(TransmParam, IntlBuf, FACMapBuf, CarMapBuf);
+		/* FAC ****************************************************************/
+		GenerateFACData.ReadData(TransmParam, GenFACDataBuf);
+		FACMLCEncoder.ProcessData(TransmParam, GenFACDataBuf, FACMapBuf);
 
-			/* OFDM-modulation ****************************************************/
-			OFDMModulation.ProcessData(TransmParam, CarMapBuf, OFDMModBuf);
-	
-			/* Transmit the signal ************************************************/
-			TransmitData.WriteData(TransmParam, OFDMModBuf);
+		/* Mapping of the MSC, FAC and pilots on the carriers ************/
+		OFDMCellMapping.ProcessData(TransmParam, IntlBuf, FACMapBuf, CarMapBuf);
+
+		/* OFDM-modulation ****************************************************/
+		OFDMModulation.ProcessData(TransmParam, CarMapBuf, OFDMModBuf);
+
+		/* Transmit the signal ************************************************/
+		TransmitData.WriteData(TransmParam, OFDMModBuf);
+		if (waveTransfer == WritingWave && AudioSourceEncoder.GetLastPayloadFrame() != 0)
+		{
+			// Finish at a PCM frame boundary. Long interleaving spans five frames.
+			// One extra superframe drains the cell mapper and receiver filters.
+			const int depth = TransmParam.eSymbolInterlMode == CParameter::SI_LONG ?
+				D_LENGTH_LONG_INTERL : D_LENGTH_SHORT_INTERL;
+			const int finishFrame = AudioSourceEncoder.GetLastPayloadFrame() +
+				depth - 1 + NUM_FRAMES_IN_SUPERFRAME;
+			if (TransmitData.GetFramesWritten() >= finishFrame)
+			{
+				SoundInterface.CloseOutFile();
+				sending = false;
+				waveTransfer = WaveComplete;
+			}
 		}
 	}
-	try{ SoundInterface.Close(); }
-	catch (CGenErr) { throw; }
 }
 
 void CDRMTransmitter::Init()
 {
+	std::lock_guard<std::mutex> lock(txMutex);
 	try
 	{
 		/* Defines number of cells, important! */
@@ -125,6 +136,7 @@ void CDRMTransmitter::Init()
 		GenerateFACData.Init(TransmParam, GenFACDataBuf);
 		FACMLCEncoder.Init(TransmParam, FACMapBuf);
 		OFDMModulation.Init(TransmParam, OFDMModBuf);
+		AudioSourceEncoder.SetWaveFileMode(SoundInterface.IsWaveFile());
 		AudioSourceEncoder.Init(TransmParam, AudSrcBuf);
 		ReadData.Init(TransmParam, DataBuf); //Added DM ========================									  
 		TransmitData.Init(TransmParam);

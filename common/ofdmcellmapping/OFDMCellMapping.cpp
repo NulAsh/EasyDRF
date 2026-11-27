@@ -123,6 +123,7 @@ void COFDMCellMapping::InitInternal(CParameter& TransmParam)
 	/* Choose right dummy cells for MSC QAM scheme */
 	switch (TransmParam.eMSCCodingScheme)
 	{
+	case CParameter::CS_1_SM: // The HamDRM 4-QAM mode also uses the 16-QAM dummy cells.
 	case CParameter::CS_2_SM:
 		pcDummyCells = (_COMPLEX*) &cDummyCells16QAM[0];
 		break;

@@ -94,6 +94,8 @@ BOOL GetFileName (HWND hDlg, LPSTR lpszFile, LPSTR lpszFileTitle, int iMaxFileNm
 
 BOOL checkfilenam(LPSTR filename, int filnamsize)
 {
+	if (filnamsize < 3)
+		return _stricmp(filename, "js") != 0 && _stricmp(filename, "vb") != 0;
 	return ((_stricmp(&filename[filnamsize-3],"exe") != 0) &&
 			(_stricmp(&filename[filnamsize-3],"bat") != 0) &&
 			(_stricmp(&filename[filnamsize-3],"bas") != 0) &&
@@ -137,17 +139,12 @@ BOOL checkfilenam(LPSTR filename, int filnamsize)
 //check the file extension, and if it's a listed type flag it as such for compression DM
 //const string&
 BOOL checkext(LPSTR filename) {
-	int size = strlen(filename);
-	return ((_stricmp(&filename[size - 5], ".html") != 0) &&
-		(_stricmp(&filename[size - 4], ".htm") != 0) &&
-		(_stricmp(&filename[size - 4], ".css") != 0) &&
-		(_stricmp(&filename[size - 3], ".js") != 0) &&
-		(_stricmp(&filename[size - 4], ".xml") != 0) &&
-		(_stricmp(&filename[size - 5], ".json") != 0) &&
-		(_stricmp(&filename[size - 4], ".ico") != 0) &&
-		(_stricmp(&filename[size - 4], ".svg") != 0) &&
-		(_stricmp(&filename[size - 4], ".mid") != 0) &&
-		(_stricmp(&filename[size - 4], ".txt") != 0));
+	const char* extension = strrchr(filename, '.');
+	if (!extension) return TRUE;
+	const char* compressible[] = { ".html", ".htm", ".css", ".js", ".xml", ".json", ".ico", ".svg", ".mid", ".txt" };
+	for (const char* suffix : compressible)
+		if (_stricmp(extension, suffix) == 0) return FALSE;
+	return TRUE;
 }
 
 void SetTXmode(BOOL ispic)

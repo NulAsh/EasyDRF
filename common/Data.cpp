@@ -49,7 +49,7 @@ void CReadData::ProcessDataInternal(CParameter& TransmParam)
 {
 	rxdcsum = 0.0;
 
-	if (TransmParam.bOnlyPicture) return;
+	if (TransmParam.bOnlyPicture || TransmParam.iNumDataService == 1) return;
 
 	/* Get data from sound interface */
 	pSound->Read(vecsSoundBuffer);
@@ -94,7 +94,7 @@ void CReadData::InitInternal(CParameter& TransmParam)
 	iOutputBlockSize = DEFiInputBlockSize/2; //<-- in Parameter.h
 
 	/* Init sound interface and intermediate buffer */
-	if (!TransmParam.bOnlyPicture)
+	if (!TransmParam.bOnlyPicture && TransmParam.iNumDataService != 1)
 		pSound->InitRecording((iOutputBlockSize * 2), FALSE);
 	vecsSoundBuffer.Init(iOutputBlockSize * 2);
 }

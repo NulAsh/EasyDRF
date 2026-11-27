@@ -40,7 +40,7 @@
 #include "picpool.h"
 #include "../bsr.h"
 
-string strName2 = { 0 }; //this is where the received filename is saved for the GetName routine DM
+string strName2; //this is where the received filename is saved for the GetName routine DM
 
 /* Implementation *************************************************************/
 /******************************************************************************\
@@ -49,7 +49,7 @@ string strName2 = { 0 }; //this is where the received filename is saved for the 
 
 int bsr_transID = 0;
 
-void CMOTDABEnc::SetMOTObject(CMOTObject& NewMOTObject, CVector<short> vecsDataIn)
+void CMOTDABEnc::SetMOTObject(CMOTObject& NewMOTObject, const CVector<short>& vecsDataIn, bool firstObject, bool waveFile)
 {
 	int				i = 0; //inits DM
 	unsigned char	xorfnam = 0,addfnam = 0;
@@ -75,12 +75,12 @@ void CMOTDABEnc::SetMOTObject(CMOTObject& NewMOTObject, CVector<short> vecsDataI
 
 	if (strcmp(strFileName.c_str(),"bsr.bin") == 0)
 	{
-		if (NewMOTObject.bIsLeader) 
+		if (firstObject && !waveFile)
 		{
 			bsr_transID++;
 			if (bsr_transID >= 3) bsr_transID = 0;
 		}
-		iTransportID = bsr_transID;
+		iTransportID = waveFile ? 1 : bsr_transID;
 	}
 	else
 	{
@@ -588,8 +588,10 @@ _BOOLEAN CMOTDABEnc::GetDataGroup(CVector<_BINARY>& vecbiNewData)
 			/* Reset counter */
 			iSegmCnt = 0;
 
-			/* Header is ready, transmit body now */
-			bCurSegHeader = FALSE;
+			// A zero-length object has no body groups.
+			bObjectDone = MOTObjSegments.vvbiBody.Size() == 0;
+			bCurSegHeader = bObjectDone;
+			if (bObjectDone) ++iTxPictCnt;
 		}
 	}
 	else
@@ -657,16 +659,11 @@ void CMOTDABEnc::Reset(int iSegLen)
 	/* Init flag which shows what is currently generated, header or body */
 	bCurSegHeader = TRUE; /* Start with header */
 
-	/* Add a "null object" so that at least one valid object can be processed */
-	CMOTObject NullObject;
-	CVector<short>  NullToSend;
-	SetMOTObject(NullObject,NullToSend);
-	MOTObjSegments.vecbiToSend.Init(0);
+	iTotSegm = 0;
 }
 
 int CMOTDABEnc::GetPicCount(void)
 {
-	if (iTxPictCnt >= 100) iTxPictCnt = 0;
 	return iTxPictCnt;
 }
 
@@ -681,6 +678,7 @@ CPicPool PicPool;
 
 _BOOLEAN CMOTDABDec::AddDataGroup(CVector<_BINARY>& vecbiNewData)
 {
+	bool receivedHeader = false;
 	int			i = 0; //init DM
 	int			j = 0; //j for junk reads... DM
 	int			iSegmentNum = 0; //init DM
@@ -987,7 +985,6 @@ _BOOLEAN CMOTDABDec::AddDataGroup(CVector<_BINARY>& vecbiNewData)
 				if (iSegmentNum == 0)
 				{
 					/* Header */
-					DMnewfile = TRUE; //added DM - this triggers Getname
 
 					/* The first segment was received, reset header */
 
@@ -1022,11 +1019,18 @@ _BOOLEAN CMOTDABDec::AddDataGroup(CVector<_BINARY>& vecbiNewData)
 				/* Test if last flag is active */
 				if (biLastFlag == TRUE)
 				{
-					if (MOTObjectRaw.Header.bOK == TRUE)
+					if (MOTObjectRaw.Header.bOK && MOTObjectRaw.Header.vecbiData.Size() >= 56)
 					{
 						/* This was the last segment and all segments were ok.
 						   Mark header as ready */
 						MOTObjectRaw.Header.bReady = TRUE;
+						GetName(MOTObjectRaw);
+						receivedHeader = true;
+						if (HdrFileSize == 0)
+						{
+							MOTObjectRaw.BodyRx.iTotSegments = 0;
+							MOTObjectRaw.BodyRx.bReady = TRUE;
+						}
 					}
 				}
 			}
@@ -1037,68 +1041,63 @@ _BOOLEAN CMOTDABDec::AddDataGroup(CVector<_BINARY>& vecbiNewData)
 				{
 
 					/* Check transport ID */
-					if (MOTObjectRaw.iTransportID == iTransportID)
+					if (MOTObjectRaw.iTransportID != iTransportID)
 					{
-						if (MOTObjectRaw.iSegmentSize == 0)			// was not initialized
-						{
-							MOTObjectRaw.iSegmentSize = iSegmentSize;
-						}
+						PicPool.storeinpool(MOTObjectRaw);
+						PicPool.getfrompool(iTransportID, MOTObjectRaw);
+					}
+					if (MOTObjectRaw.iSegmentSize == 0)			// was not initialized
+					{
+						MOTObjectRaw.iSegmentSize = iSegmentSize;
+					}
 
-						if ((MOTObjectRaw.iSegmentSize != iSegmentSize) && (biLastFlag == FALSE))
-						{
-							// mode change, remove all.
-							PicPool.poolremove(iTransportID);
-							PicPool.getfrompool(iTransportID, MOTObjectRaw);
-						}
+					if ((MOTObjectRaw.iSegmentSize != iSegmentSize) && (biLastFlag == FALSE))
+					{
+						// mode change, remove all.
+						PicPool.poolremove(iTransportID);
+						PicPool.getfrompool(iTransportID, MOTObjectRaw);
+					}
 
-						/* Init flag for body ok */
-						MOTObjectRaw.BodyRx.bOK = TRUE;
+					/* Init flag for body ok */
+					MOTObjectRaw.BodyRx.bOK = TRUE;
 
-						MOTObjectRaw.BodyRx.Add(vecbiNewData, iSegmentSize, iSegmentNum); //This is where the incoming segment bits get added - also the segment counts and erasure data is computed DM
-						MOTObjectRaw.iActSegment = iSegmentNum;
+					MOTObjectRaw.BodyRx.Add(vecbiNewData, iSegmentSize, iSegmentNum); //This is where the incoming segment bits get added - also the segment counts and erasure data is computed DM
+					MOTObjectRaw.iActSegment = iSegmentNum;
 
 #define NEWCODE TRUE
 #if NEWCODE
-						//NEW CODE DM =================================
-						//This code copies the bit data in byte form to the new RS buffer, even if segment 0 (header) is missing
-						//WORKING 2:45am 10th Sep 2021
-						//only execute if the CRC is good
-						if (bCRCOk) {
-							if (iSegmentSize > DMRSpsize) {
-								DMRSpsize = iSegmentSize;
-							};
+					//NEW CODE DM =================================
+					//This code copies the bit data in byte form to the new RS buffer, even if segment 0 (header) is missing
+					//WORKING 2:45am 10th Sep 2021
+					//only execute if the CRC is good
+					if (bCRCOk) {
+						if (iSegmentSize > DMRSpsize) {
+							DMRSpsize = iSegmentSize;
+						};
 
-							MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].ResetBitAccess(); //Start reading from zero
-							unsigned int j = (iSegmentNum * DMRSpsize); //compute - the base index is the previous segment size * segment number (to avoid an error on the last segment, which is smaller)
-							DMRSpsize = iSegmentSize; //update
-							unsigned int k = MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].size() / 8; //find total bytes for this segment
-							unsigned int a = 0;
+						MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].ResetBitAccess(); //Start reading from zero
+						unsigned int j = (iSegmentNum * DMRSpsize); //compute - the base index is the previous segment size * segment number (to avoid an error on the last segment, which is smaller)
+						DMRSpsize = iSegmentSize; //update
+						unsigned int k = MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].size() / 8; //find total bytes for this segment
+						unsigned int a = 0;
 
-							int oldsize = MOTObjectRaw.BodyRx.RSbytes[RSsw].size(); //get current size of new buffer
-							int newsize = max((j + k) * 2, 1050000); //set this large to ensure there is never a read error in the distribute function
-							//if RSbytes buffer is too small, resize it
-							if (oldsize < newsize) {
-								MOTObjectRaw.BodyRx.RSbytes[RSsw].resize(newsize); //make it larger if needed
-							}
-							if (k > 0) {
-								for (unsigned int i = 0; i < k; i++)
-								{
-									a = j + i;
-									//use a NEW vector buffer in heap memory instead of using up 1M+ of stack memory:
-									MOTObjectRaw.BodyRx.RSbytes[RSsw].at(a) = MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].Separate(8); //grab a byte each time, and write into the RSbytes buffer
-								}
+						int oldsize = MOTObjectRaw.BodyRx.RSbytes[RSsw].size(); //get current size of new buffer
+						int newsize = max((j + k) * 2, 1050000); //set this large to ensure there is never a read error in the distribute function
+						//if RSbytes buffer is too small, resize it
+						if (oldsize < newsize) {
+							MOTObjectRaw.BodyRx.RSbytes[RSsw].resize(newsize); //make it larger if needed
+						}
+						if (k > 0) {
+							for (unsigned int i = 0; i < k; i++)
+							{
+								a = j + i;
+								//use a NEW vector buffer in heap memory instead of using up 1M+ of stack memory:
+								MOTObjectRaw.BodyRx.RSbytes[RSsw].at(a) = MOTObjectRaw.BodyRx.vvbiSegment[iSegmentNum].Separate(8); //grab a byte each time, and write into the RSbytes buffer
 							}
 						}
-						//END NEW CODE DM =================================
+					}
+					//END NEW CODE DM =================================
 #endif //NEWCODE
-					}
-					else
-					{
-						// store in pool - when the ID changes (new file)
-						PicPool.storeinpool(MOTObjectRaw);
-						PicPool.getfrompool(iTransportID, MOTObjectRaw);  //why? DM
-						if (biLastFlag == FALSE) MOTObjectRaw.iSegmentSize = iSegmentSize;
-					}
 				}
 				/* Test if last flag is active */
 				if (biLastFlag == TRUE)
@@ -1212,13 +1211,7 @@ _BOOLEAN CMOTDABDec::AddDataGroup(CVector<_BINARY>& vecbiNewData)
 		}
 	}
 	
-	if (DMnewfile) {
-		//DMnewfile = only update if segment 0 (header) was sent
-		GetName(MOTObjectRaw); //added to read the filename and size from the old header DM
-		//DecodeObject(MOTObjectRaw);
-		DMnewfile = FALSE; //reset Segment 0 detection
-	}
-	else {
+	if (!receivedHeader) {
 		LogData(DMfilename, 0); //Update stats file here, to avoid corruption at the end...
 	}
 
@@ -1272,10 +1265,10 @@ void GetName(CMOTObjectRaw& MOTObjectRaw)
 				iSizeRec -= 2;
 			}
 
-			//Updated code
+			iSizeRec -= iDataFieldLen;
 			int j = 0;
 			i = 0;
-			strName2 = '\0'; //clear old name
+			strName2.clear();
 			if (iDataFieldLen > 80) { iDataFieldLen = 80; } //bounds check DM
 			while (i < iDataFieldLen) {
 				ucDatafield = (unsigned char)MOTObjectRaw.Header.vecbiData.Separate(8);
@@ -1526,6 +1519,7 @@ void CMOTDABDec::DecodeObject(CMOTObjectRaw& MOTObjectRaw)
 			}
 
 			/* Get data */
+			iSizeRec -= iDataFieldLen;
 			MOTObject.strName = "";
 			i = 0;
 			int j = 0;
@@ -1798,7 +1792,7 @@ void RSdecode(unsigned char* RSbuffer, unsigned int DecTransportIDc, bool RSswc)
 				//If file is bigger than 512k, bypass decompression and save it directly DM
 				//gzip decoder ======================================================================================
 				//.gz is used for standard mode to be compatible - RS modes were to use .gzz to prevent unzipping .gz files.. NOT IMPLEMENTED YET - DM
-					if ((stricmp(&filenametest[strlen(filenametest) - 3], ".gz") == 0) && (filesizetest <= BUFSIZE)) {
+					if ((strlen(filenametest) >= 3 && stricmp(&filenametest[strlen(filenametest) - 3], ".gz") == 0) && (filesizetest <= BUFSIZE)) {
 						//Data is gzipped, unzip into buffer1 and save
 						//data is compressed, so decompress it
 						i = 0;
@@ -1833,10 +1827,10 @@ void RSdecode(unsigned char* RSbuffer, unsigned int DecTransportIDc, bool RSswc)
 
 					}
 					//LZMA decoder ======================================================================================
-					else if ((stricmp(&filenametest[strlen(filenametest) - 3], ".lz") == 0) && (filesizetest <= BUFSIZE)) {
+					else if ((strlen(filenametest) >= 3 && stricmp(&filenametest[strlen(filenametest) - 3], ".lz") == 0) && (filesizetest <= BUFSIZE)) {
 #endif //USEGZIP
 #if !USEGZIP
-						if ((stricmp(&filenametest[strlen(filenametest) - 3], ".lz") == 0) && (filesizetest <= BUFSIZE)) {
+						if ((strlen(filenametest) >= 3 && stricmp(&filenametest[strlen(filenametest) - 3], ".lz") == 0) && (filesizetest <= BUFSIZE)) {
 #endif //!USEGZIP
 							//Data is LZMA compressed, uncompress into buffer1 and save
 							//data is compressed, so decompress it

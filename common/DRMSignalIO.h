@@ -94,6 +94,7 @@ public:
 	void SetIQOutput(const EOutFormat eFormat) {eOutputFormat = eFormat;}
 	EOutFormat GetIQOutput() {return eOutputFormat;}
 	virtual ~CTransmitData();
+	int GetFramesWritten() const { return framesWritten; }
 
 	void SetCarOffset(const CReal rNewCarOffset)
 		{rDefCarOffset = rNewCarOffset;}
@@ -103,6 +104,10 @@ protected:
 	CVector<short>	vecsDataOut;
 	int				iBlockCnt;
 	int				iNumBlocks;
+	int framesWritten;
+	// Delays in the two transmit peak limiters.
+	int p1, p2, p3, p4, Id1, Id2, Qd1, Qd2;
+	int op1, op2, op3, op4, oId1, oId2, oQd1, oQd2;
 	EOutFormat		eOutputFormat;
 
 	CReal			rDefCarOffset;

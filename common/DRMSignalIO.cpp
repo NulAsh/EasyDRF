@@ -32,27 +32,6 @@
 #include "../Dialog.h"
 #include "../resource.h"
 
-//PAPR processing DM
-float oscpo = 0.0; //sinewave phase increment
-int PAPRt = 0; //clipping threshold
-int p1 = 0;
-int p2 = 0;
-int p3 = 0;
-int p4 = 0;
-int Id1 = 0;
-int Id2 = 0;
-int Qd1 = 0;
-int Qd2 = 0;
-int op1 = 0;
-int op2 = 0;
-int op3 = 0;
-int op4 = 0;
-int oId1 = 0;
-int oId2 = 0;
-int oQd1 = 0;
-int oQd2 = 0;
-
-
 /* Implementation *************************************************************/
 /******************************************************************************\
 * Transmitter                                                                  *
@@ -113,7 +92,7 @@ void CTransmitData::ProcessDataInternal(CParameter& Parameter)
 					readout = 0;
 					paintmode = -1; //keep OFDM audio muted until TX turns off
 					audio.Init(0); //clear the buffer and release the memory
-					OnCommand(mainwindow, IDB_START, 0); //switch to receive
+					PostMessage(mainwindow, WM_COMMAND, IDB_START, 0); // switch to receive on the GUI thread
 					break; //exit the for loop
 				}
 			}
@@ -127,7 +106,7 @@ void CTransmitData::ProcessDataInternal(CParameter& Parameter)
 	rvecDataDecI = Filter(rvec3, rvecA, rvecDataDecI, rvecZDecI2); //filter I
 	rvecDataDecQ = Filter(rvec3, rvecA, rvecDataDecQ, rvecZDecQ2); //filter Q
 
-	PAPRt = 6553; //try -13dB //8192; //default PAPR clipping threshold is -12dB for QAM64
+	int PAPRt = 6553; //try -13dB //8192; //default PAPR clipping threshold is -12dB for QAM64
 	//if (getqam() == 2) PAPRt = 8192; //these need to be ints
 	if (getqam() == 1) PAPRt = 5792; //QAM16 -15dB
 	if (getqam() == 0) PAPRt = 4096; //QAM4  -18dB
@@ -275,6 +254,7 @@ void CTransmitData::ProcessDataInternal(CParameter& Parameter)
 
 		/* Write data to sound card. Must be a blocking function */
 		pSound->Write(vecsDataOut);
+		++framesWritten;
 	}
 
 }
@@ -285,6 +265,11 @@ void CTransmitData::InitInternal(CParameter& TransmParam)
 	float const Fcp = (-Fc / (SOUNDCRD_SAMPLE_RATE / 4)) * crPi * 2;
 	WUSinStep = CComplex(cos(Fcp), sin(Fcp));
 	WURotate = (_REAL)1.0;
+	framesWritten = 0;
+	p1 = p2 = p3 = p4 = 0;
+	Id1 = Id2 = Qd1 = Qd2 = 0;
+	op1 = op2 = op3 = op4 = 0;
+	oId1 = oId2 = oQd1 = oQd2 = 0;
 
 	/* Init vector for storing a complete DRM frame number of OFDM symbols */
 	iBlockCnt = 0;

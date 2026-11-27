@@ -255,6 +255,9 @@ void CTimeSync::ProcessDataInternal(CParameter& ReceiverParam)
 					}
 
 
+					if (modeHistorySamples < iRMCorrBufSize)
+						++modeHistorySamples;
+
 					/* Energy of guard intervall calculation and detection of
 					   peak is only needed if timing aquisition is true */
 					if (bTimingAcqu == TRUE)
@@ -347,17 +350,19 @@ void CTimeSync::ProcessDataInternal(CParameter& ReceiverParam)
 
 
 			/* Robustness mode detection ------------------------------------ */
-			if (bRobModAcqu == TRUE)
+			if (bRobModAcqu && modeHistorySamples == iRMCorrBufSize)
 			{
-				/* Correlation of guard-interval correlation with prepared
-				   cos-vector. Store highest peak */
+				// Evaluate independent windows at any capture phase.
+				modeHistorySamples = 0;
 				rMaxValRMCorr = (CReal) 0.0;
 				for (j = 0; j < NUM_ROBUSTNESS_MODES; j++)
 				{
 					/* Correlation with symbol rate frequency (Correlations must
 					   be normalized to be comparable! ("/ iGuardSizeX")) */
-					rResMode[j] = Abs(Sum(vecrRMCorrBuffer[j] * vecrCos[j])) / 
-						iLenGuardInt[j];
+					CComplex correlation(0, 0);
+					for (k = 0; k < iRMCorrBufSize; ++k)
+						correlation += vecrRMCorrBuffer[j][k] * veccSymbolRate[j][k];
+					rResMode[j] = Abs(correlation) / iLenGuardInt[j];
 
 					/* Search for maximum */
 					if (rResMode[j] > rMaxValRMCorr)
@@ -377,7 +382,10 @@ void CTimeSync::ProcessDataInternal(CParameter& ReceiverParam)
 
 				/* Find out if we have a reliable measure
 				   (distance to next peak) */
-				if ((rMaxValRMCorr / rSecHighPeak) > THRESHOLD_RELI_MEASURE)
+				const int candidate = rMaxValRMCorr > CONFIRMED_MODE_RATIO * rSecHighPeak ? iDetectedRModeInd : -1;
+				const bool confirmed = candidate >= 0 && candidate == previousModeCandidate;
+				previousModeCandidate = candidate;
+				if (confirmed || rMaxValRMCorr > THRESHOLD_RELI_MEASURE * rSecHighPeak)
 				{
 					/* Reset aquisition flag for robustness mode detection */
 					bRobModAcqu = FALSE;
@@ -582,8 +590,6 @@ void CTimeSync::InitInternal(CParameter& ReceiverParam)
 {
 	int		i = 0, j = 0; //init DM
 	int		iMaxSymbolBlockSize = 0; //init DM
-	int		iObservedFreqBin = 0; //init DM
-	CReal	rArgTemp = 0; //init DM
 	int		iCorrBuffSize = 0; //init DM
 
 	/* Get parameters from info class */
@@ -650,6 +656,8 @@ void CTimeSync::InitInternal(CParameter& ReceiverParam)
 
 
 	/* Set the selected robustness mode index */
+	previousModeCandidate = -1;
+	modeHistorySamples = 0;
 	iSelectedMode = GetIndFromRMode(ReceiverParam.GetWaveMode());
 
 
@@ -706,27 +714,11 @@ void CTimeSync::InitInternal(CParameter& ReceiverParam)
 		/* Allocate memory for correlation input buffers */
 		vecrRMCorrBuffer[i].Init(iRMCorrBufSize);
 
-		/* Tables for sin and cos function for the desired frequency band */
-		/* First, allocate memory for vector */
-		vecrCos[i].Init(iRMCorrBufSize);
-
-		/* Build table */
-		for (j = 0; j < iRMCorrBufSize; j++)
-		{
-			/* Calculate frequency bins which has to be observed for each
-			   mode.
-			   Mode A: f_A = 1 / T_s = 1 / 26.66 ms = 37.5 Hz
-			   Mode B: f_B = 1 / T_s = 1 / 26.66 ms = 37.5 Hz
-			   Mode E: f_E = 1 / T_s = 1 / 26.66 ms = 37.5 Hz
-			   */
-			iObservedFreqBin = 
-				(int) ((CReal) iRMCorrBufSize * STEP_SIZE_GUARD_CORR /
-				(iLenUsefPart[i] + iLenGuardInt[i]));
-
-			rArgTemp = (CReal) 2.0 * crPi / iRMCorrBufSize * j;
-
-			vecrCos[i][j] = cos(rArgTemp * iObservedFreqBin);
-		}
+		// One complex Fourier coefficient at this mode's exact symbol rate.
+		veccSymbolRate[i].Init(iRMCorrBufSize);
+		const CReal step = 2 * crPi * STEP_SIZE_GUARD_CORR / (iLenUsefPart[i] + iLenGuardInt[i]);
+		for (j = 0; j < iRMCorrBufSize; ++j)
+			veccSymbolRate[i][j] = CComplex(cos(j * step), sin(j * step));
 	}
 
 #ifdef USE_FRQOFFS_TRACK_GUARDCORR
@@ -794,6 +786,8 @@ void CTimeSync::StartAcquisition()
 	iCorrAvInd = 0;
 	iTimeCorr = 0;
 	iRobCorr = 0;
+	previousModeCandidate = -1;
+	modeHistorySamples = 0;
 	bMaxCorr = FALSE;
 
 #ifdef timdeb

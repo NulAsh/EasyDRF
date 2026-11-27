@@ -33,101 +33,38 @@
 /******************************************************************************\
 * Encoder                                                                      *
 \******************************************************************************/
-void CDataEncoder::GeneratePacket(CVector<_BINARY>& vecbiPacket)
+bool CDataEncoder::QueueDrained()
 {
-	int			i = 0;
-	_BOOLEAN	bLastFlag = 0;
+	return iCurDataPointer == vecbiCurDataUnit.Size() &&
+		MOTSlideShowEncoder.GetPicCnt() >= MOTSlideShowEncoder.GetNoOfPic();
+}
 
-	/* Init size for whole packet, not only body */
-	vecbiPacket.Init(iTotalPacketSize);
-	vecbiPacket.ResetBitAccess();
-
-	/* Calculate remaining data size to be transmitted */
-	const int iRemainSize = vecbiCurDataUnit.Size() - iCurDataPointer;
-
-
-	/* Header --------------------------------------------------------------- */
-	/* First flag */
-	if (iCurDataPointer == 0)
-		vecbiPacket.Enqueue((uint32_t) 1, 1);
-	else
-		vecbiPacket.Enqueue((uint32_t) 0, 1);
-
-	/* Last flag */
-	if (iRemainSize > iPacketLen)
+void CDataEncoder::GeneratePacket(CVector<_BINARY>& vecbiPacket, bool idle)
+{
+	if (!idle && iCurDataPointer == vecbiCurDataUnit.Size())
 	{
-		vecbiPacket.Enqueue((uint32_t) 0, 1);
-		bLastFlag = FALSE;
-	}
-	else
-	{
-		vecbiPacket.Enqueue((uint32_t) 1, 1);
-		bLastFlag = TRUE;
-	}
-
-	/* Packet Id */
-	vecbiPacket.Enqueue((uint32_t) iPacketID, 2);
-
-	/* Padded packet indicator (PPI) */
-	if (iRemainSize < iPacketLen)
-		vecbiPacket.Enqueue((uint32_t) 1, 1);
-	else
-		vecbiPacket.Enqueue((uint32_t) 0, 1);
-
-	/* Continuity index (CI) */
-	vecbiPacket.Enqueue((uint32_t) iContinInd, 3);
-
-	/* Increment index modulo 8 (1 << 3) */
-	iContinInd++;
-	if (iContinInd == 8)
-		iContinInd = 0;
-
-
-	/* Body ----------------------------------------------------------------- */
-	if (iRemainSize >= iPacketLen)
-	{
-		if (iRemainSize == iPacketLen)
-		{
-			/* Last packet */
-			for (i = 0; i < iPacketLen; i++)
-				vecbiPacket.Enqueue(vecbiCurDataUnit.Separate(1), 1);
-		}
-		else
-		{
-			for (i = 0; i < iPacketLen; i++)
-			{
-				vecbiPacket.Enqueue(vecbiCurDataUnit.Separate(1), 1);
-				iCurDataPointer++;
-			}
-		}
-	}
-	else
-	{
-		/* Padded packet. If the PPI is 1 then the first byte shall indicate
-		   the number of useful bytes that follow, and the data field is
-		   completed with padding bytes of value 0x00 */
-		vecbiPacket.Enqueue((uint32_t) (iRemainSize / SIZEOF__BYTE), SIZEOF__BYTE);
-
-		/* Data */
-		for (i = 0; i < iRemainSize; i++)
-			vecbiPacket.Enqueue(vecbiCurDataUnit.Separate(1), 1);
-
-		/* Padding */
-		for (i = 0; i < iPacketLen - iRemainSize; i++)
-			vecbiPacket.Enqueue(vecbiCurDataUnit.Separate(1), 1);
-	}
-
-	/* If this was the last packet, get data for next data unit */
-	if (bLastFlag == TRUE)
-	{
-		/* Generate new data unit */
 		MOTSlideShowEncoder.GetDataUnit(vecbiCurDataUnit);
 		vecbiCurDataUnit.ResetBitAccess();
-
-		/* Reset data pointer and continuity index */
 		iCurDataPointer = 0;
 	}
+	const int remaining = idle ? 0 : vecbiCurDataUnit.Size() - iCurDataPointer;
+	const int used = remaining < iPacketLen ? remaining : iPacketLen;
 
+	// A padded, first-and-last packet with a zero byte count is a DRM idle packet.
+	// Value-initialize the entire packet, including padding and the CRC field.
+	vecbiPacket.Init(iTotalPacketSize, 0);
+	vecbiPacket.ResetBitAccess();
+	vecbiPacket.Enqueue(idle || iCurDataPointer == 0, 1);
+	vecbiPacket.Enqueue(used == remaining, 1);
+	vecbiPacket.Enqueue(iPacketID, 2);
+	vecbiPacket.Enqueue(used < iPacketLen, 1);
+	vecbiPacket.Enqueue(iContinInd, 3);
+	iContinInd = (iContinInd + 1) % 8;
+	if (used < iPacketLen)
+		vecbiPacket.Enqueue(used / SIZEOF__BYTE, SIZEOF__BYTE);
+	for (int i = 0; i < used; ++i)
+		vecbiPacket.Enqueue(vecbiCurDataUnit.Separate(1), 1);
+	iCurDataPointer += used;
 
 	/* CRC ------------------------------------------------------------------ */
 	CCRC CRCObject;
@@ -139,14 +76,14 @@ void CDataEncoder::GeneratePacket(CVector<_BINARY>& vecbiPacket)
 	CRCObject.Reset(16);
 
 	/* "byLengthBody" was defined in the header */
-	for (i = 0; i < (iTotalPacketSize / SIZEOF__BYTE - 2); i++)
+	for (int i = 0; i < (iTotalPacketSize / SIZEOF__BYTE - 2); i++)
 		CRCObject.AddByte(vecbiPacket.Separate(SIZEOF__BYTE));
 
 	/* Now, pointer in "enqueue"-function is back at the same place, add CRC */
 	vecbiPacket.Enqueue(CRCObject.GetCRC(), 16);
 }
 
-int CDataEncoder::Init(CParameter& Param)
+int CDataEncoder::Init(CParameter& Param, bool waveFile)
 {
 	/* Init packet length and total packet size (the total packet length is
 	   three bytes longer as it includes the header and CRC fields) */
@@ -161,11 +98,8 @@ const int iCurSelDataServ = 0;
 	iPacketID = Param.Service[iCurSelDataServ].DataParam.iPacketID;
 
 	/* Init DAB MOT encoder object */
-	MOTSlideShowEncoder.Init(iSegLen);
-
-	/* Generate first data unit */
-	MOTSlideShowEncoder.GetDataUnit(vecbiCurDataUnit);
-	vecbiCurDataUnit.ResetBitAccess();
+	MOTSlideShowEncoder.Init(iSegLen, waveFile);
+	vecbiCurDataUnit.Init(0);
 
 	/* Reset pointer to current position in data unit and continuity index */
 	iCurDataPointer = 0;

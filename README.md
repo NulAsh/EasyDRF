@@ -9,3 +9,9 @@ DRM stands for "Digital Radio Mondiale", and as this was certain to be trademark
 The application has been renamed to "EasyDRF" (Easy Digital Radio Files).
 
 Daz Man 2021
+
+## Saving a file to cassette
+
+In the **Soundcard** menu, select **Wave Out** under **TX Output**. Click **TX File**, add your files, select **1 Instance**, and click **TX**. The recording appears in the `WaveOut` directory. Each export gets its own timestamped filename. Exporting the same named files in the same order with the same modem settings and callsign produces byte-identical WAV contents.
+
+Start the receiver before playing the recording from the beginning. The normal lead-in gives it 5.6 seconds of modem signal to synchronize before the first file. **Long Leadin** extends this to 9.6 seconds. Each recording also includes the frames needed to recover the end of the last file.

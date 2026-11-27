@@ -51,8 +51,9 @@ public:
 	CDataEncoder() {}
 	virtual ~CDataEncoder() {}
 
-	int Init(CParameter& Param);
-	void GeneratePacket(CVector<_BINARY>& vecbiPacket);
+	int Init(CParameter& Param, bool waveFile);
+	void GeneratePacket(CVector<_BINARY>& vecbiPacket, bool idle);
+	bool QueueDrained();
 
 	CMOTSlideShowEncoder* GetSliShowEnc() {return &MOTSlideShowEncoder;}
 

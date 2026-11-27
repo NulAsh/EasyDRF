@@ -30,6 +30,9 @@
 #define DRMTRANSM_H__3B0BA660_CA63_4344_BB2B_23E7A0D31912__INCLUDED_
 
 #include <iostream>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include "Buffer.h"
 #include "Parameter.h"
 #include "Data.h"
@@ -65,6 +68,9 @@ public:
 	void Send();
 	void NotSend();
 
+	enum WaveTransfer { NoWaveTransfer, WritingWave, WaveComplete };
+	WaveTransfer GetWaveTransfer() const { return waveTransfer.load(); }
+
 	/* Get pointer to internal modules */
 	CAudioSourceEncoder*	GetAudSrcEnc() {return &AudioSourceEncoder;}
 	CTransmitData*			GetTransData() {return &TransmitData;}
@@ -86,6 +92,11 @@ public:
 protected:
 	void StartParameters(CParameter& Param);
 	void Run();
+	std::mutex txMutex;
+	std::condition_variable wakeTransmitter;
+	bool sending = false;
+	bool stopping = false;
+	std::atomic<WaveTransfer> waveTransfer{NoWaveTransfer};
 
 	/* Parameters */
 	CParameter				TransmParam;

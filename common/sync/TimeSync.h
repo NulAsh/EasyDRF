@@ -49,6 +49,8 @@
 
 /* Definitions for robustness mode detection */
 #define NUM_BLOCKS_FOR_RM_CORR			16
+// A single decisive window or two successive windows with the same clear winner.
+#define CONFIRMED_MODE_RATIO 1.5
 #define THRESHOLD_RELI_MEASURE			((CReal) 8.0)
 
 /* The guard-interval correlation is only updated every "STEP_SIZE_GUARD_CORR"
@@ -160,7 +162,9 @@ protected:
 	CRealVector					rGuardPowBlock;
 
 	CRealVector					vecrRMCorrBuffer[NUM_ROBUSTNESS_MODES];
-	CRealVector					vecrCos[NUM_ROBUSTNESS_MODES];
+	CComplexVector				veccSymbolRate[NUM_ROBUSTNESS_MODES];
+	int modeHistorySamples;
+	int previousModeCandidate;
 	int							iRMCorrBufSize;
 
 #ifdef USE_FRQOFFS_TRACK_GUARDCORR

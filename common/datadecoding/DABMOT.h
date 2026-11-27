@@ -78,12 +78,13 @@ class CMOTObject
 {
 public:
 	CMOTObject() {Reset();}
-	CMOTObject(const CMOTObject& NewObj) : vecbRawData(NewObj.vecbRawData),	strName(NewObj.strName) {}
+	CMOTObject(const CMOTObject&) = default;
 
 	inline CMOTObject& operator=(const CMOTObject& NewObj)
 	{
 		strName = NewObj.strName;
 		strNameandDir = NewObj.strNameandDir;
+		iTransportID = NewObj.iTransportID;
 		vecbRawData.Init(NewObj.vecbRawData.Size());
 		vecbRawData = NewObj.vecbRawData;
 		return *this;
@@ -94,13 +95,12 @@ public:
 		vecbRawData.Init(0);
 		strName = "";
 		strNameandDir = "";
-		bIsLeader = FALSE;
+		iTransportID = 0;
 	}
 
 	CVector<_BYTE>	vecbRawData;
 	string			strName;
 	string			strNameandDir;
-	_BOOLEAN		bIsLeader;
 	int				iTransportID;
 };
 
@@ -114,7 +114,7 @@ public:
 
 	void Reset(int iSegLen);
 	_BOOLEAN GetDataGroup(CVector<_BINARY>& vecbiNewData);
-	void SetMOTObject(CMOTObject& NewMOTObject,CVector<short> vecsDataIn);
+	void SetMOTObject(CMOTObject& object, const CVector<short>& segments, bool firstObject, bool waveFile);
 	int GetPicCount(void);
 	int GetPicSegmAct(void) { return iSegmCnt; };
 	int GetPicSegmTot(void) { return iTotSegm; };

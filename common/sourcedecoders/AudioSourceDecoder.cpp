@@ -522,11 +522,13 @@ void CAudioSourceEncoder::ProcessDataInternal(CParameter& TransmParam)
 		CVector<_BINARY> vecbiData;
 		const int iNumPack = iOutputBlockSize / iTotPacketSize;
 		int iPos = 0;
-
+		++framesEncoded;
+		const bool leadIn = framesEncoded <= leadInFrames;
 		for (int j = 0; j < iNumPack; j++)
 		{
 			/* Get new packet */
-			DataEncoder.GeneratePacket(vecbiData);
+			const bool idle = leadIn || GetNoOfPic() == 0 || (waveFile && DataEncoder.QueueDrained());
+			DataEncoder.GeneratePacket(vecbiData, idle);
 
 			/* Put it on stream */
 			for (i = 0; i < iTotPacketSize; i++)
@@ -535,6 +537,11 @@ void CAudioSourceEncoder::ProcessDataInternal(CParameter& TransmParam)
 				iPos++;
 			}
 		}
+		// The MSC frame can have a few spare bits beyond its whole packets.
+		while (iPos < iOutputBlockSize)
+			(*pvecOutputData)[iPos++] = 0;
+		if (waveFile && !leadIn && lastPayloadFrame == 0 && DataEncoder.QueueDrained())
+			lastPayloadFrame = framesEncoded;
 	}
 }
 
@@ -548,7 +555,8 @@ void CAudioSourceEncoder::InitInternal(CParameter& TransmParam)
 	if (TransmParam.iNumDataService == 1)
 	{
 		bIsDataService = TRUE;
-		iTotPacketSize = DataEncoder.Init(TransmParam); //
+		framesEncoded = lastPayloadFrame = 0;
+		iTotPacketSize = DataEncoder.Init(TransmParam, waveFile);
 	}
 	else
 	{
