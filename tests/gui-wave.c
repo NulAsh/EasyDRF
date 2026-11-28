@@ -42,6 +42,15 @@ static void fail(const char *why)
     exit(1);
 }
 
+static BOOL CALLBACK find_edit(HWND window, LPARAM result)
+{
+    char name[32] = "";
+    GetClassNameA(window, name, sizeof name);
+    if (lstrcmpiA(name, "Edit") != 0) return TRUE;
+    *(HWND*)result = window;
+    return FALSE;
+}
+
 static HWND wait_dialog(int target)
 {
     kind = target;
@@ -98,7 +107,8 @@ int main(int argc, char **argv)
     char full[MAX_PATH];
     GetFullPathNameA("cassette.bin", MAX_PATH, full, NULL);
     HWND edit = GetDlgItem(open, edt1);
-    if (!edit) edit = FindWindowExA(GetDlgItem(open, cmb13), NULL, "Edit", NULL);
+    if (!edit) EnumChildWindows(GetDlgItem(open, cmb13), find_edit, (LPARAM)&edit);
+    if (!edit) EnumChildWindows(open, find_edit, (LPARAM)&edit);
     if (!edit) fail("file picker has no filename field");
     SendMessageA(edit, WM_SETTEXT, 0, (LPARAM)full);
     PostMessageA(open, WM_COMMAND, IDOK, 0);
