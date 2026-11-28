@@ -26,7 +26,7 @@ jobs:
           pactl set-default-source cassette.monitor
           wineboot -u
           wineserver -w
-          i686-w64-mingw32-gcc -std=c11 -O2 -static tests/gui-wave.c -o "$RUNNER_TEMP/gui-wave.exe"
+          i686-w64-mingw32-gcc -std=c11 -O2 -static tests/gui-wave.c -lwinmm -o "$RUNNER_TEMP/gui-wave.exe"
           mkdir "$RUNNER_TEMP/recording"
           cd "$RUNNER_TEMP/recording"
           timeout 160 wine "$RUNNER_TEMP/gui-wave.exe" "$(winepath -w "$GITHUB_WORKSPACE/Release/EasyDRF.exe")"

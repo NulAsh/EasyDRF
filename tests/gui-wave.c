@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <dlgs.h>
+#include <mmsystem.h>
 #include "../resource.h"
 
 static PROCESS_INFORMATION app;
@@ -21,7 +22,7 @@ static BOOL CALLBACK find_dialog(HWND window, LPARAM unused)
     GetWindowTextA(window, title, sizeof title);
     if ((kind == 0 && GetDlgItem(window, IDB_STARTPIC)) ||
         (kind == 1 && !strcmp(title, "Select Files")) ||
-        (kind == 2 && GetDlgItem(window, edt1))) {
+        (kind == 2 && (GetDlgItem(window, edt1) || GetDlgItem(window, cmb13)))) {
         match = window;
         return FALSE;
     }
@@ -52,20 +53,6 @@ static HWND wait_dialog(int target)
     }
     fail("expected dialog did not open");
     return NULL;
-}
-
-static int wave_command(HMENU menu)
-{
-    char label[80];
-    for (int i = 0; i < GetMenuItemCount(menu); ++i) {
-        HMENU sub = GetSubMenu(menu, i);
-        if (sub) {
-            int id = wave_command(sub);
-            if (id >= 0) return id;
-        } else if (GetMenuStringA(menu, i, label, sizeof label, MF_BYPOSITION) &&
-                   !strcmp(label, "Wave Out")) return GetMenuItemID(menu, i);
-    }
-    return -1;
 }
 
 static int complete_wave(void)
@@ -101,9 +88,8 @@ int main(int argc, char **argv)
     if (!CreateProcessA(argv[1], NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &app)) return 2;
     HWND main = wait_dialog(0);
     WaitForInputIdle(app.hProcess, 15000);
-    int command = wave_command(GetMenu(main));
+    int command = IDM_O_TX_O_DRIVERS0 + waveOutGetNumDevs();
     printf("Selecting Wave Out (menu ID %d)\n", command);
-    if (command < 0) fail("Wave Out missing");
     SendMessageA(main, WM_COMMAND, command, 0);
     PostMessageA(main, WM_COMMAND, IDB_STARTPIC, 0);
     HWND select = wait_dialog(1);
@@ -111,7 +97,10 @@ int main(int argc, char **argv)
     HWND open = wait_dialog(2);
     char full[MAX_PATH];
     GetFullPathNameA("cassette.bin", MAX_PATH, full, NULL);
-    SetDlgItemTextA(open, edt1, full);
+    HWND edit = GetDlgItem(open, edt1);
+    if (!edit) edit = FindWindowExA(GetDlgItem(open, cmb13), NULL, "Edit", NULL);
+    if (!edit) fail("file picker has no filename field");
+    SendMessageA(edit, WM_SETTEXT, 0, (LPARAM)full);
     PostMessageA(open, WM_COMMAND, IDOK, 0);
     char list[256] = "";
     for (int i = 0; i < 100 && !strstr(list, "cassette.bin"); ++i) {
